@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>ติดตามสถานะงาน</title>
+<style>
+  :root {
+    --primary: #1a73e8;
+    --primary-dark: #0d47a1;
+    --success: #1e8e3e;
+    --danger: #d93025;
+    --warning: #f9a825;
+    --purple: #8e24aa;
+    --grey: #5f6368;
+    --text: #202124;
+    --text-muted: #5f6368;
+    --border: #dadce0;
+    --bg: #f4f6f8;
+    font-size: 17px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Noto Sans Thai", -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-bottom: 40px;
+  }
+  .hidden { display: none !important; }
+  .container { max-width: 520px; margin: 0 auto; padding: 16px; }
+  .app-header {
+    background: var(--primary);
+    color: #fff;
+    padding: 20px 16px;
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .job-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .job-number { font-weight: 800; font-size: 1.15rem; }
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .info-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 0.95rem; gap: 10px; border-bottom: 1px solid #f1f3f4; }
+  .info-row:last-child { border-bottom: none; }
+  .info-row .label { color: var(--text-muted); white-space: nowrap; }
+  .info-row .value { text-align: right; font-weight: 600; }
+  .section-title { font-size: 1rem; font-weight: 700; margin: 14px 0 8px 0; }
+  .photo-grid-view {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .photo-grid-view img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; }
+  .balance-box {
+    background: #e8f0fe;
+    border-radius: 12px;
+    padding: 14px;
+    text-align: center;
+    margin: 10px 0;
+  }
+  .balance-box .amount { font-size: 1.5rem; font-weight: 800; color: var(--primary-dark); }
+  .balance-box .caption { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
+  .warning-box {
+    background: #fff8e1;
+    border: 1px solid var(--warning);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 0.88rem;
+    margin-bottom: 10px;
+  }
+  .timeline-item {
+    display: flex;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 0.88rem;
+    color: var(--text-muted);
+  }
+  .timeline-item .icon { font-size: 1.1rem; }
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 15px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    border-radius: 14px;
+    border: none;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+  }
+  .btn-secondary { background: #fff; color: var(--primary); border: 2px solid var(--primary); }
+  .center-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    text-align: center;
+    padding: 24px;
+  }
+  .spinner {
+    width: 44px; height: 44px;
+    border: 5px solid #e0e0e0;
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .job-list-header {
+    font-weight: 700;
+    margin: 4px 2px 10px 2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="app-header">📦 ติดตามสถานะงาน</div>
+
+<!-- ======================== Loading Screen ======================== -->
+<div id="screen-loading" class="center-screen">
+  <div class="spinner"></div>
+  <p>กำลังโหลดข้อมูล...</p>
+</div>
+
+<!-- ======================== Error Screen ======================== -->
+<div id="screen-error" class="center-screen hidden">
+  <p style="font-size:3rem;">⚠️</p>
+  <p id="error-message">เกิดข้อผิดพลาด</p>
+  <button class="btn btn-secondary" style="margin-top:16px;max-width:240px;" onclick="location.reload()">ลองใหม่อีกครั้ง</button>
+</div>
+
+<!-- ======================== Empty Screen ======================== -->
+<div id="screen-empty" class="center-screen hidden">
+  <p style="font-size:3rem;">📭</p>
+  <p>ยังไม่พบงานที่ฝากไว้กับร้าน</p>
+  <p style="color:var(--text-muted);font-size:0.9rem;">หากเพิ่งฝากงาน กรุณารอสักครู่แล้วลองเปิดหน้านี้ใหม่</p>
+  <a class="btn btn-secondary" style="margin-top:16px;max-width:240px;" href="https://line.me/R/oaMessage/@352rdotz/">💬 ติดต่อร้าน</a>
+</div>
+
+<!-- ======================== Job List ======================== -->
+<div id="screen-list" class="container hidden">
+  <div class="job-list-header">งานของฉัน (<span id="job-count">0</span>)</div>
+  <div id="job-list"></div>
+  <a class="btn btn-secondary" id="btn-contact-shop" href="https://line.me/R/oaMessage/@352rdotz/">💬 ติดต่อร้าน</a>
+</div>
+
+<script type="module">
+  import { initLiff, getLineIdentity, closeLiffWindow, isRunningInsideLineApp } from "../shared/liff-adapter.js";
+  import { identifyCustomer } from "../shared/customer-client.js";
+  import { fetchMyJobs, fetchMyJobImages, fetchMyJobPaidTotal, fetchMyJobNotifications } from "../shared/customer-status-client.js";
+  import { formatThaiDate, formatThaiDateTime } from "../shared/utils.js";
+
+  // ----------------------------------------------------------------------------
+  // Status Display Config (Icon + สี + ข้อความ เสมอ ไม่ใช้สีอย่างเดียว)
+  // ----------------------------------------------------------------------------
+  const JOB_STATUS_DISPLAY = {
+    pending_confirmation: { label: "รอยืนยันนัด", icon: "⏳", color: "#f9a825" },
+    waiting: { label: "รอทำ", icon: "📋", color: "#1a73e8" },
+    in_progress: { label: "กำลังทำ", icon: "✂️", color: "#8e24aa" },
+    completed: { label: "เสร็จแล้ว", icon: "✅", color: "#1e8e3e" },
+    picked_up: { label: "รับงานแล้ว", icon: "📦", color: "#5f6368" },
+    cancelled: { label: "ยกเลิก", icon: "🚫", color: "#d93025" },
+  };
+  const PAYMENT_STATUS_DISPLAY = {
+    unpaid: { label: "ยังไม่ชำระ", icon: "⭕" },
+    deposit_paid: { label: "ชำระมัดจำแล้ว", icon: "🔸" },
+    paid: { label: "ชำระครบแล้ว", icon: "✅" },
+    refunded: { label: "คืนเงินแล้ว", icon: "↩️" },
+  };
+  const NOTIFICATION_LABELS = {
+    job_received: { icon: "📝", label: "รับคำขอฝากงานแล้ว" },
+    appointment_confirmed: { icon: "✅", label: "ร้านยืนยันนัดรับแล้ว" },
+    appointment_changed: { icon: "🔄", label: "ร้านเปลี่ยนวันนัดรับ" },
+    status_update: { icon: "🔔", label: "อัปเดตสถานะงาน" },
+    reminder: { icon: "⏰", label: "แจ้งเตือน" },
+    other: { icon: "📨", label: "แจ้งเตือน" },
+  };
+
+  const screens = {
+    loading: document.getElementById("screen-loading"),
+    error: document.getElementById("screen-error"),
+    empty: document.getElementById("screen-empty"),
+    list: document.getElementById("screen-list"),
+  };
+  function showScreen(name) {
+    Object.values(screens).forEach((el) => el.classList.add("hidden"));
+    screens[name].classList.remove("hidden");
+  }
+  function showError(message) {
+    document.getElementById("error-message").textContent = message;
+    showScreen("error");
+  }
+
+  async function init() {
+    if (!navigator.onLine) {
+      showError("ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง");
+      return;
+    }
+    try {
+      const liffState = await initLiff();
+      if (!liffState.isLoggedIn) return; // กำลัง Redirect ไป LINE Login
+
+      const identity = await getLineIdentity();
+      const result = await identifyCustomer({
+        idToken: identity.idToken,
+        mockCustomer: identity.mockCustomer,
+      });
+
+      await loadJobs(result.access_token);
+    } catch (err) {
+      showError(err.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+    }
+  }
+
+  async function loadJobs(accessToken) {
+    const jobs = await fetchMyJobs({ accessToken });
+
+    if (jobs.length === 0) {
+      showScreen("empty");
+      return;
+    }
+
+    document.getElementById("job-count").textContent = jobs.length;
+    const listEl = document.getElementById("job-list");
+    listEl.innerHTML = "";
+
+    for (const job of jobs) {
+      const card = await renderJobCard(job, accessToken);
+      listEl.appendChild(card);
+    }
+
+    showScreen("list");
+  }
+
+  async function renderJobCard(job, accessToken) {
+    const statusInfo = JOB_STATUS_DISPLAY[job.status] ?? { label: job.status, icon: "❔", color: "#999" };
+    const quantityText = job.quantity_is_over_ten ? (job.quantity_note ?? "มากกว่า 10 ชิ้น") : `${job.quantity} ชิ้น`;
+
+    const [images, paidTotal, notifications] = await Promise.all([
+      fetchMyJobImages({ accessToken, jobId: job.id }),
+      fetchMyJobPaidTotal({ accessToken, jobId: job.id }),
+      fetchMyJobNotifications({ accessToken, jobId: job.id }),
+    ]);
+
+    const balance = job.price_final != null ? job.price_final - paidTotal : null;
+    const paymentInfo = PAYMENT_STATUS_DISPLAY[job.payment_status] ?? { label: job.payment_status, icon: "" };
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="job-card-top">
+        <div class="job-number">${job.job_number}</div>
+        <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span>
+      </div>
+
+      ${images.length > 0 ? `
+      <div class="photo-grid-view" style="margin-top:10px;">
+        ${images.map((img) => `<img src="${img.signedUrl ?? ""}" alt="รูปงาน" />`).join("")}
+      </div>` : ""}
+
+      <div class="section-title">ข้อมูลงาน</div>
+      <div class="info-row"><span class="label">ประเภทงาน</span><span class="value">${job.job_types?.label_th ?? job.job_type_other ?? "-"}</span></div>
+      <div class="info-row"><span class="label">จำนวน</span><span class="value">${quantityText}</span></div>
+      ${job.description ? `<div class="info-row"><span class="label">รายละเอียด</span><span class="value">${job.description}</span></div>` : ""}
+      <div class="info-row"><span class="label">วันที่ฝากงาน</span><span class="value">${formatThaiDate(job.created_at)}</span></div>
+      <div class="info-row"><span class="label">วันที่ต้องการรับ</span><span class="value">${formatThaiDate(job.requested_pickup_date)} ${job.requested_pickup_time_slot} น.</span></div>
+      ${job.confirmed_pickup_date ? `
+      <div class="info-row"><span class="label">วันนัดที่ร้านยืนยัน</span><span class="value">${formatThaiDate(job.confirmed_pickup_date)} ${job.confirmed_pickup_time} น.</span></div>
+      ` : `<div class="warning-box">⏳ ร้านกำลังตรวจสอบและจะยืนยันวันนัดรับเร็วๆ นี้</div>`}
+
+      <div class="section-title">ราคาและการชำระเงิน</div>
+      <div class="info-row"><span class="label">ราคาประเมิน</span><span class="value">${job.price_estimate != null ? job.price_estimate.toLocaleString() + " บาท" : "ยังไม่ระบุ"}</span></div>
+      <div class="info-row"><span class="label">ราคาสรุปจริง</span><span class="value">${job.price_final != null ? job.price_final.toLocaleString() + " บาท" : "ยังไม่ระบุ"}</span></div>
+      <div class="info-row"><span class="label">เงินมัดจำที่ต้องการ</span><span class="value">${(job.deposit_amount ?? 0).toLocaleString()} บาท</span></div>
+      <div class="info-row"><span class="label">สถานะการชำระ</span><span class="value">${paymentInfo.icon} ${paymentInfo.label}</span></div>
+      ${balance != null ? `
+      <div class="balance-box">
+        <div class="amount">${balance.toLocaleString()} บาท</div>
+        <div class="caption">ยอดคงเหลือ</div>
+      </div>` : ""}
+
+      ${notifications.length > 0 ? `
+      <div class="section-title">ประวัติการแจ้งเตือน</div>
+      ${notifications.map((n) => {
+        const info = NOTIFICATION_LABELS[n.notification_type] ?? { icon: "📨", label: n.notification_type };
+        return `<div class="timeline-item"><span class="icon">${info.icon}</span><span>${info.label} — ${formatThaiDateTime(n.created_at)}</span></div>`;
+      }).join("")}
+      ` : ""}
+    `;
+    return card;
+  }
+
+  init();
+</script>
+</body>
+</html>
