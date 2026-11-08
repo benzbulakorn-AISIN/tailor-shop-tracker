@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ทดสอบระบบ Login (Phase 3) - QE Tailor Tracker</title>
+<style>
+  :root { font-size: 18px; }
+  body {
+    font-family: "Noto Sans Thai", -apple-system, sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 24px 16px;
+    display: flex;
+    justify-content: center;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 420px;
+    width: 100%;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  h1 { font-size: 1.3rem; margin-top: 0; }
+  .identity-btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+    border-radius: 12px;
+    border: 2px solid #ddd;
+    background: #fafafa;
+    cursor: pointer;
+    text-align: left;
+  }
+  .identity-btn.selected { border-color: #1a73e8; background: #e8f0fe; }
+  input[type="password"] {
+    width: 100%;
+    font-size: 1.6rem;
+    letter-spacing: 0.5rem;
+    text-align: center;
+    padding: 14px;
+    border-radius: 12px;
+    border: 2px solid #ddd;
+    box-sizing: border-box;
+    margin: 16px 0;
+  }
+  label.checkbox-row { display:flex; align-items:center; gap:8px; font-size:1rem; margin-bottom:16px; }
+  button.primary {
+    width: 100%;
+    padding: 16px;
+    font-size: 1.15rem;
+    border-radius: 12px;
+    border: none;
+    background: #1a73e8;
+    color: #fff;
+    cursor: pointer;
+  }
+  button.primary:disabled { background: #9aa0a6; cursor: not-allowed; }
+  button.secondary {
+    width: 100%;
+    padding: 12px;
+    font-size: 1rem;
+    border-radius: 12px;
+    border: 2px solid #d93025;
+    background: #fff;
+    color: #d93025;
+    cursor: pointer;
+    margin-top: 12px;
+  }
+  .status-box {
+    background: #f1f8e9;
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🧵 ทดสอบระบบ Login (Phase 3)</h1>
+
+    <div id="login-section">
+      <div id="identity-list"></div>
+
+      <div id="pin-section" class="hidden">
+        <p>กรอก PIN 6 หลักของ <strong id="selected-name"></strong></p>
+        <input type="password" id="pin-input" inputmode="numeric" maxlength="6" placeholder="••••••" />
+        <label class="checkbox-row">
+          <input type="checkbox" id="remember-device-checkbox" />
+          จดจำอุปกรณ์นี้ (ไม่ต้องใส่ PIN ซ้ำครั้งหน้า)
+        </label>
+        <button class="primary" id="login-btn">เข้าสู่ระบบ</button>
+      </div>
+    </div>
+
+    <div id="logged-in-section" class="hidden">
+      <div class="status-box">
+        ✅ เข้าสู่ระบบสำเร็จ<br/>
+        Shop User ID: <span id="info-shop-user-id"></span><br/>
+        Role: <span id="info-app-role"></span>
+      </div>
+      <button class="secondary" id="logout-btn">ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { listLoginIdentities } from "../shared/auth-client.js";
+    import {
+      initSession,
+      loginWithPin,
+      logout,
+      onSessionChange,
+      getSessionSnapshot,
+    } from "../shared/session.js";
+    import { showToast, preventDoubleSubmit, isValidPinFormat } from "../shared/utils.js";
+
+    const identityListEl = document.getElementById("identity-list");
+    const pinSectionEl = document.getElementById("pin-section");
+    const pinInputEl = document.getElementById("pin-input");
+    const selectedNameEl = document.getElementById("selected-name");
+    const loginBtnEl = document.getElementById("login-btn");
+    const rememberCheckboxEl = document.getElementById("remember-device-checkbox");
+
+    const loginSectionEl = document.getElementById("login-section");
+    const loggedInSectionEl = document.getElementById("logged-in-section");
+    const infoShopUserIdEl = document.getElementById("info-shop-user-id");
+    const infoAppRoleEl = document.getElementById("info-app-role");
+    const logoutBtnEl = document.getElementById("logout-btn");
+
+    let selectedShopUserId = null;
+
+    function renderSessionState(snapshot) {
+      if (snapshot.isLoggedIn) {
+        loginSectionEl.classList.add("hidden");
+        loggedInSectionEl.classList.remove("hidden");
+        infoShopUserIdEl.textContent = snapshot.shopUserId;
+        infoAppRoleEl.textContent = snapshot.appRole;
+      } else {
+        loginSectionEl.classList.remove("hidden");
+        loggedInSectionEl.classList.add("hidden");
+      }
+    }
+
+    onSessionChange(renderSessionState);
+
+    async function loadIdentities() {
+      try {
+        const { identities } = await listLoginIdentities();
+        identityListEl.innerHTML = "";
+        identities.forEach((identity) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "identity-btn";
+          btn.textContent = `${identity.full_name} (${identity.role})`;
+          btn.addEventListener("click", () => {
+            selectedShopUserId = identity.id;
+            selectedNameEl.textContent = identity.full_name;
+            document
+              .querySelectorAll(".identity-btn")
+              .forEach((b) => b.classList.remove("selected"));
+            btn.classList.add("selected");
+            pinSectionEl.classList.remove("hidden");
+            pinInputEl.focus();
+          });
+          identityListEl.appendChild(btn);
+        });
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }
+
+    const handleLogin = preventDoubleSubmit(async () => {
+      const pin = pinInputEl.value.trim();
+      if (!selectedShopUserId) {
+        showToast("กรุณาเลือกชื่อผู้ใช้ก่อน", "error");
+        return;
+      }
+      if (!isValidPinFormat(pin)) {
+        showToast("PIN ต้องเป็นตัวเลข 6 หลัก", "error");
+        return;
+      }
+      loginBtnEl.disabled = true;
+      try {
+        await loginWithPin({
+          shopUserId: selectedShopUserId,
+          pin,
+          rememberDevice: rememberCheckboxEl.checked,
+          deviceLabel: navigator.userAgent.slice(0, 60),
+        });
+        showToast("เข้าสู่ระบบสำเร็จ", "success");
+        pinInputEl.value = "";
+      } catch (err) {
+        showToast(err.message, "error");
+      } finally {
+        loginBtnEl.disabled = false;
+      }
+    });
+
+    loginBtnEl.addEventListener("click", handleLogin);
+    pinInputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleLogin();
+    });
+
+    logoutBtnEl.addEventListener("click", preventDoubleSubmit(async () => {
+      await logout();
+      showToast("ออกจากระบบแล้ว", "info");
+    }));
+
+    (async function start() {
+      const snapshot = await initSession();
+      renderSessionState(snapshot);
+      if (!snapshot.isLoggedIn) {
+        await loadIdentities();
+      }
+    })();
+  </script>
+</body>
+</html>
