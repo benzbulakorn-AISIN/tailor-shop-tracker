@@ -730,7 +730,7 @@
     const isOverTen = quantitySelect.value === "over10";
 
     const payload = {
-      client_submission_id: generateIdempotencyKey("job"),
+      client_submission_id: crypto.randomUUID(),
       full_name: document.getElementById("input-full-name").value.trim(),
       phone: document.getElementById("input-phone").value.trim(),
       job_type_id: jobTypeSelect.value,
