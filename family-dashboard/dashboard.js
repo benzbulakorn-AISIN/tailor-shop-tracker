@@ -8,6 +8,10 @@
 //    เพื่อย้อนกลับกรณีกด "ชำระแล้ว" ผิด — ต้องระบุเหตุผลสั้นๆ ป้องกันกดเผลอซ้ำ
 //    (เบื้องหลังเรียก Void รายการรับเงินทั้งหมดของงานนั้น ไม่ลบประวัติจริง)
 // 3) แถบ 3 สถานะด้านบนกดได้ — กดแล้วเลื่อนจอลงไปยังปุ่มทำรายการจริงให้อัตโนมัติ
+//    (เปลี่ยนมาใช้ Event Delegation ผูกครั้งเดียวตอนเริ่มระบบ แก้ปัญหาที่เคยกดไม่ติด)
+// 4) เพิ่ม Auto-refresh อัตโนมัติทุก 20 วินาที เพื่อให้เห็นงานใหม่จากลูกค้าทันที
+//    โดยไม่ต้องกดปุ่ม 🔄 เอง (จะไม่รีเฟรชถ้ามีหน้าต่างรายละเอียดงานเปิดอยู่
+//    เพื่อไม่ให้ข้อมูลที่กำลังกรอกอยู่หายไปกลางคัน)
 
 import { listLoginIdentities } from "../shared/auth-client.js";
 import {
@@ -200,9 +204,11 @@ onSessionChange((snapshot) => {
     document.getElementById("header-user-role").textContent =
       { owner: "เจ้าของร้าน", admin: "ผู้ดูแลระบบ", assistant: "ผู้ช่วยร้าน" }[snapshot.appRole] ?? snapshot.appRole;
     loadDashboardData();
+    startAutoRefresh();
   } else {
     showScreen("login");
     loadIdentities();
+    stopAutoRefresh();
   }
 });
 
@@ -268,6 +274,35 @@ document.getElementById("btn-refresh").addEventListener("click", preventDoubleSu
   await refreshJobs();
   showToast("รีเฟรชข้อมูลสำเร็จ", "success");
 }));
+
+// ============================================================================
+// Auto-refresh อัตโนมัติ (ทุก 20 วินาที) เพื่อให้เห็นงานใหม่จากลูกค้าทันที
+// โดยไม่ต้องกดปุ่ม 🔄 เอง — จะไม่รีเฟรชถ้ามีหน้าต่างรายละเอียดงานเปิดอยู่
+// เพื่อไม่ให้ข้อมูลที่กำลังกรอก/ดูอยู่เปลี่ยนแปลงกลางคัน
+// ============================================================================
+const AUTO_REFRESH_INTERVAL_MS = 20000;
+let autoRefreshTimer = null;
+
+function startAutoRefresh() {
+  if (autoRefreshTimer) return;
+  autoRefreshTimer = setInterval(async () => {
+    if (!navigator.onLine) return;
+    if (state.currentJobId !== null) return; // มีหน้าต่างงานเปิดอยู่ ไม่รบกวน
+    if (!getSessionSnapshot().isLoggedIn) return;
+    try {
+      await refreshJobs();
+    } catch {
+      // เงียบไว้ ไม่ต้องรบกวนผู้ใช้ด้วย Error จากการรีเฟรชเบื้องหลัง
+    }
+  }, AUTO_REFRESH_INTERVAL_MS);
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+}
 
 // ============================================================================
 // Summary Cards
@@ -545,7 +580,7 @@ function buildStepperHtml(status) {
         const done = idx < currentIndex;
         const active = idx === currentIndex;
         const icon = done ? "✅" : (active ? "🔵" : "⚪");
-        return `<div class="stepper-item ${active ? "active" : ""} ${done ? "done" : ""}" style="cursor:pointer;">
+        return `<div class="stepper-item ${active ? "active" : ""} ${done ? "done" : ""}" data-stepper-click="1" style="cursor:pointer;">
           <div class="stepper-icon">${icon}</div>
           <div>${STEPPER_LABELS[s]}</div>
         </div>`;
@@ -554,17 +589,18 @@ function buildStepperHtml(status) {
   `;
 }
 
-/** ผูก Event ให้แถบ 3 สถานะกดแล้วเลื่อนจอไปยังจุดที่ทำรายการได้จริง */
-function bindStepperScroll(isPendingConfirmation) {
-  const stepperEl = document.getElementById("status-stepper");
-  if (!stepperEl) return;
-  const targetId = isPendingConfirmation ? "appointment-section" : "status-section";
-  stepperEl.querySelectorAll(".stepper-item").forEach((item) => {
-    item.addEventListener("click", () => {
-      document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  });
-}
+/**
+ * ผูก Event ให้แถบ 3 สถานะกดแล้วเลื่อนจอไปยังจุดที่ทำรายการได้จริง
+ * ใช้วิธี Event Delegation ผูกไว้ที่ "job-modal-sheet" (Element แม่ที่ไม่เคยถูกแทนที่
+ * ด้วย innerHTML เลย) ครั้งเดียวตอนเริ่มระบบ แทนการผูกทีละปุ่มทุกครั้งที่เปิดหน้าต่าง
+ * วิธีนี้ทำงานแน่นอน ไม่ว่าจะเปิดหน้าต่างงานกี่ครั้งก็ตาม
+ */
+let currentStepperScrollTarget = "status-section";
+document.getElementById("job-modal-sheet").addEventListener("click", (e) => {
+  const stepperItem = e.target.closest("[data-stepper-click]");
+  if (!stepperItem) return;
+  document.getElementById(currentStepperScrollTarget)?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 // ============================================================================
 // Job Detail Modal
@@ -676,7 +712,7 @@ async function openJobModal(jobId) {
   `;
 
   document.getElementById("modal-close-btn").addEventListener("click", closeJobModal);
-  bindStepperScroll(isPendingConfirmation);
+  currentStepperScrollTarget = isPendingConfirmation ? "appointment-section" : "status-section";
 
   renderAppointmentSection(job, isOwnerOrAdmin, isPendingConfirmation);
   renderStatusButtons(job, balance);
@@ -1166,6 +1202,7 @@ document.getElementById("job-modal-backdrop").addEventListener("click", (e) => {
     document.getElementById("header-user-role").textContent =
       { owner: "เจ้าของร้าน", admin: "ผู้ดูแลระบบ", assistant: "ผู้ช่วยร้าน" }[snapshot.appRole] ?? snapshot.appRole;
     await loadDashboardData();
+    startAutoRefresh();
   } else {
     showScreen("login");
     await loadIdentities();
