@@ -173,12 +173,14 @@
     margin-bottom: 10px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     cursor: pointer;
+    position: relative;
   }
   .job-card-top {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 8px;
+    padding-right: 42px;
   }
   .job-card .job-number { font-weight: 700; font-size: 1.05rem; }
   .job-card .customer-name { color: var(--text-muted); font-size: 0.9rem; margin-top: 2px; }
@@ -209,6 +211,20 @@
     font-size: 0.78rem;
     font-weight: 700;
   }
+  .quick-call-btn {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #e8f5e9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    text-decoration: none;
+  }
 
   /* ---------------- States ---------------- */
   .center-screen {
@@ -237,6 +253,23 @@
     padding: 24px;
     max-width: 420px;
     margin: 40px auto;
+  }
+  .login-title {
+    text-align: center;
+    line-height: 1.5;
+    margin-bottom: 20px;
+  }
+  .login-title .eyebrow {
+    display: block;
+    font-size: 1rem;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .login-title .shop-name {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--primary-dark);
   }
   .identity-btn {
     display: block;
@@ -291,6 +324,10 @@
     display: inline-block;
     margin-bottom: 0;
   }
+  .btn-big-step {
+    font-size: 1.2rem;
+    padding: 20px;
+  }
   .quick-percent-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -298,6 +335,32 @@
     margin-bottom: 10px;
   }
   .quick-percent-row .btn { margin-bottom: 0; padding: 12px; font-size: 0.95rem; }
+
+  /* ---------------- Status Stepper ---------------- */
+  .status-stepper {
+    display: flex;
+    justify-content: space-between;
+    margin: 10px 0 18px 0;
+  }
+  .stepper-item {
+    flex: 1;
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+  }
+  .stepper-item.active { color: var(--primary); font-weight: 800; }
+  .stepper-item.done { color: var(--success); }
+  .stepper-icon { font-size: 1.3rem; margin-bottom: 2px; }
+  .stepper-cancelled-box {
+    background: #fdecea;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+    font-weight: 700;
+    margin: 10px 0 16px 0;
+  }
 
   /* ---------------- Modal (Job Detail) ---------------- */
   .modal-backdrop {
@@ -458,7 +521,10 @@
 <!-- ======================== Login Screen ======================== -->
 <div id="screen-login" class="container hidden">
   <div class="login-card">
-    <h2 style="text-align:center;">🧵 ระบบติดตามงาน ร้านเย็บผ้าณัฏฐา</h2>
+    <div class="login-title">
+      <span class="eyebrow">🧵 ระบบติดตามงาน</span>
+      <span class="shop-name">ร้านเย็บผ้าณัฏฐา</span>
+    </div>
     <div id="identity-list"></div>
     <div id="pin-section" class="hidden">
       <p>กรอก PIN 6 หลักของ <strong id="selected-name"></strong></p>

@@ -1,13 +1,16 @@
 // family-dashboard/dashboard.js
-// Logic หลักของ Family Dashboard (Phase 5-7 รวมกัน + ปรับปรุงตามคำขอผู้ใช้)
+// Logic หลักของ Family Dashboard (Phase 5-7 รวมกัน + ปรับปรุงความง่ายในการใช้งาน)
 //
-// สรุปการปรับปรุงล่าสุด:
-// 1) เรียงลำดับรายชื่อ Login ใหม่: เจ้าของร้าน → ผู้ดูแลระบบ → ผู้ช่วยร้าน 1 → ผู้ช่วยร้าน 2
-//    พร้อมแสดงชื่อจริงในวงเล็บ (Mapping ตาม shop_user_id ที่ Seed ไว้ตั้งแต่ Phase 2/3)
-// 2) กด Card สรุปแล้ว Auto-scroll ลงไปที่รายการงานทันที
-// 3) เพิ่มปุ่มคำนวณเงินมัดจำแบบ % (25%/50%) จากราคาประเมิน
-// 4) ตัดตัวเลือก "รับเงิน/คืนเงิน" ออก ให้เป็น "รับเงิน" เสมอ (ลดความซับซ้อน)
-// 5) เอาส่วน "ผู้รับผิดชอบ" ออกจาก Job Detail Modal ทั้งหมด (ตามคำขอให้ลดความรก)
+// สรุปการปรับปรุงรอบนี้:
+// 1) ชื่อหน้า Login จัดเป็น 2 บรรทัดแบบตั้งใจ (ไม่ใช่ตกบรรทัดมั่วๆ)
+// 2) รวมส่วน "ราคา" + "หมายเหตุภายใน" เป็นปุ่มเดียว "บันทึกข้อมูลงาน"
+//    (ส่วนรับเงิน/ยืนยันนัด ยังคงแยกปุ่ม เพราะเป็นธุรกรรม/การแจ้งเตือนที่สำคัญ)
+// 3) จำกัดปุ่ม "เก็บถาวรงาน" ให้เห็นเฉพาะ Role "admin" เท่านั้น (ซ่อนจาก Owner)
+//    ⚠️ เป็นการซ่อนที่ชั้น UI เท่านั้น ไม่ได้เปลี่ยนสิทธิ์ที่ Edge Function/ฐานข้อมูล
+// 4) ลดขั้นตอนเปลี่ยนสถานะ: ปุ่มเดินหน้า (waiting->in_progress->completed->picked_up)
+//    กดครั้งเดียวจบไม่ต้องยืนยันซ้ำ ส่วนยกเลิกงาน/ย้อนกลับยังคงมี Confirm Dialog
+//    เพิ่มแถบแสดงขั้นตอนเป็นภาพ (Stepper) ให้เห็นภาพรวมได้ทันที
+// 5) เพิ่มปุ่มลัด: โทรหาลูกค้าจากหน้ารายการ, ชำระยอดคงเหลือทั้งหมด (เติมเลขให้อัตโนมัติ)
 
 import { listLoginIdentities } from "../shared/auth-client.js";
 import {
@@ -34,11 +37,8 @@ import { PICKUP_TIME_SLOTS, JOB_TYPES_FALLBACK } from "../shared/job-constants.j
 import { getSupabaseClient } from "../shared/supabase-client.js";
 
 // ============================================================================
-// Identity Display Config (ข้อ 2: ลำดับ + ชื่อจริงในวงเล็บ)
+// Identity Display Config (ลำดับ + ชื่อจริงในวงเล็บ)
 // ============================================================================
-// Mapping นี้อ้างอิงจาก shop_user_id ที่ Seed ไว้ตั้งแต่ Phase 2/3
-// (00000000-...-001=เจ้าของร้าน, 002=ผู้ดูแลระบบ, 003=ผู้ช่วยร้าน1, 004=ผู้ช่วยร้าน2)
-// หากบัญชีจริงใช้ ID ต่างจากนี้ การ Map ชื่อจะไม่ติด แต่ลำดับ Role ยังถูกต้องเสมอ
 const IDENTITY_NAME_OVERRIDES = {
   "00000000-0000-0000-0000-000000000001": "ณัฏฐา",
   "00000000-0000-0000-0000-000000000002": "บุลากร",
@@ -53,12 +53,11 @@ function sortIdentitiesForLogin(identities) {
     const pa = ROLE_SORT_PRIORITY[a.role] ?? 99;
     const pb = ROLE_SORT_PRIORITY[b.role] ?? 99;
     if (pa !== pb) return pa - pb;
-    return a.id.localeCompare(b.id); // เรียง assistant 1 มาก่อน 2 ตามลำดับ ID ที่ Seed ไว้
+    return a.id.localeCompare(b.id);
   });
 }
 
 function buildIdentityDisplayLabel(identity) {
-  // ตัดคำว่า "(ตัวอย่าง)" ที่เป็น Placeholder ใน Seed Data ออก ให้ดูสะอาดตา
   const cleanName = identity.full_name.replace(/\s*\(ตัวอย่าง\)\s*/g, "").trim();
   const personalName = IDENTITY_NAME_OVERRIDES[identity.id];
   return personalName ? `${cleanName} (${personalName})` : cleanName;
@@ -255,7 +254,7 @@ document.getElementById("btn-refresh").addEventListener("click", preventDoubleSu
 }));
 
 // ============================================================================
-// Summary Cards (ข้อ 3: Auto-scroll ไปที่รายการงานเมื่อกด Card)
+// Summary Cards (Auto-scroll ไปที่รายการงานเมื่อกด Card)
 // ============================================================================
 const CARD_DEFINITIONS = [
   { key: "pendingConfirmation", label: "งานใหม่รอยืนยัน", icon: "🆕" },
@@ -285,7 +284,6 @@ function renderSummaryCards() {
       state.activeCard = state.activeCard === def.key ? null : def.key;
       state.selectedCalendarDate = null;
       renderAll();
-      // Auto-scroll ลงไปที่รายการงานทันที ไม่ต้องให้ผู้ใช้เลื่อนเอง
       document.getElementById("job-list-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     grid.appendChild(card);
@@ -413,7 +411,7 @@ document.getElementById("btn-cal-next").addEventListener("click", () => {
 });
 
 // ============================================================================
-// Job List
+// Job List (เพิ่มปุ่มโทรด่วน)
 // ============================================================================
 function renderJobList() {
   let jobs = getCardFilteredJobs();
@@ -440,6 +438,7 @@ function renderJobList() {
     const card = document.createElement("div");
     card.className = "job-card";
     card.innerHTML = `
+      ${job.customers?.phone ? `<a href="tel:${job.customers.phone}" class="quick-call-btn" title="โทรหาลูกค้า" onclick="event.stopPropagation()">📞</a>` : ""}
       <div class="job-card-top">
         <div>
           <div class="job-number">${job.job_number}</div>
@@ -508,15 +507,44 @@ function showConfirmDialog({ text, requireReason = false, confirmLabel = "ยื
 }
 
 // ============================================================================
+// Status Stepper (ภาพรวมขั้นตอนงาน)
+// ============================================================================
+const STEPPER_SEQUENCE = ["pending_confirmation", "waiting", "in_progress", "completed", "picked_up"];
+const STEPPER_LABELS = {
+  pending_confirmation: "รอยืนยัน",
+  waiting: "รอทำ",
+  in_progress: "กำลังทำ",
+  completed: "เสร็จแล้ว",
+  picked_up: "รับแล้ว",
+};
+
+function buildStepperHtml(status) {
+  if (status === "cancelled") {
+    return `<div class="stepper-cancelled-box">🚫 งานนี้ถูกยกเลิกแล้ว</div>`;
+  }
+  const currentIndex = STEPPER_SEQUENCE.indexOf(status);
+  return `
+    <div class="status-stepper">
+      ${STEPPER_SEQUENCE.map((s, idx) => {
+        const done = idx < currentIndex;
+        const active = idx === currentIndex;
+        const icon = done ? "✅" : (active ? "🔵" : "⚪");
+        return `<div class="stepper-item ${active ? "active" : ""} ${done ? "done" : ""}">
+          <div class="stepper-icon">${icon}</div>
+          <div>${STEPPER_LABELS[s]}</div>
+        </div>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+// ============================================================================
 // Job Detail Modal
 // ============================================================================
-const STATUS_TRANSITIONS = {
-  pending_confirmation: [],
-  waiting: [{ to: "in_progress", label: "เริ่มทำงาน", cls: "btn-purple" }, { to: "cancelled", label: "ยกเลิกงาน", cls: "btn-danger" }],
-  in_progress: [{ to: "completed", label: "งานเสร็จแล้ว", cls: "btn-success" }, { to: "cancelled", label: "ยกเลิกงาน", cls: "btn-danger" }],
-  completed: [{ to: "picked_up", label: "ลูกค้ารับแล้ว", cls: "btn-success" }, { to: "in_progress", label: "ย้อนกลับไปกำลังทำ", cls: "btn-secondary" }],
-  picked_up: [],
-  cancelled: [],
+const STATUS_NEXT_STEP = {
+  waiting: { to: "in_progress", label: "▶️ เริ่มทำงาน", cls: "btn-purple" },
+  in_progress: { to: "completed", label: "✅ งานเสร็จแล้ว", cls: "btn-success" },
+  completed: { to: "picked_up", label: "📦 ลูกค้ารับแล้ว", cls: "btn-success" },
 };
 
 const PAYMENT_METHOD_LABELS = { cash: "เงินสด", transfer: "โอนเงิน", qr: "QR Payment", other: "อื่น ๆ" };
@@ -544,6 +572,7 @@ async function openJobModal(jobId) {
   const token = getAccessToken();
   const session = getSessionSnapshot();
   const isOwnerOrAdmin = session.appRole === "owner" || session.appRole === "admin";
+  const isAdminOnly = session.appRole === "admin"; // ข้อ 3: เก็บถาวรเฉพาะ Admin
 
   const sheet = document.getElementById("job-modal-sheet");
   sheet.innerHTML = `<div class="center-screen"><div class="spinner"></div><p>กำลังโหลด...</p></div>`;
@@ -574,7 +603,9 @@ async function openJobModal(jobId) {
     <button class="modal-close-btn" id="modal-close-btn">✕</button>
     <h2>${job.job_number} <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span></h2>
 
-    <div class="modal-section">
+    ${buildStepperHtml(job.status)}
+
+    <div class="modal-section" style="border-top:none;margin-top:0;padding-top:0;">
       <h3>👤 ข้อมูลลูกค้า</h3>
       <div class="info-row"><span class="label">ชื่อ</span><span class="value">${job.customers?.full_name ?? "-"}</span></div>
       <div class="info-row"><span class="label">เบอร์โทร</span><span class="value">${job.customers?.phone ?? "-"}</span></div>
@@ -601,7 +632,7 @@ async function openJobModal(jobId) {
       </div>
     </div>` : ""}
 
-    <div class="modal-section" id="pricing-section"></div>
+    <div class="modal-section" id="job-info-section"></div>
 
     <div class="modal-section" id="payment-section"></div>
 
@@ -610,53 +641,25 @@ async function openJobModal(jobId) {
     <div class="modal-section" id="notification-history-section"></div>
 
     <div class="modal-section" id="status-section">
-      <h3>🔄 เปลี่ยนสถานะ</h3>
+      <h3>🔄 สถานะงาน</h3>
       <div id="status-buttons"></div>
     </div>
 
+    ${isAdminOnly ? `
     <div class="modal-section">
-      <h3>📝 หมายเหตุภายใน (ร้านเท่านั้น ลูกค้าไม่เห็น)</h3>
-      <textarea class="note-input" id="note-input" placeholder="เพิ่มหมายเหตุ...">${job.internal_note ?? ""}</textarea>
-      <button class="btn btn-secondary" id="btn-save-note" style="margin-top:8px;">บันทึกหมายเหตุ</button>
-    </div>
-
-    ${isOwnerOrAdmin ? `
-    <div class="modal-section">
-      <h3>🗄️ จัดการงาน (Owner/Admin)</h3>
+      <h3>🗄️ จัดการงาน (เฉพาะผู้ดูแลระบบ)</h3>
       <button class="btn btn-danger" id="btn-archive-job">เก็บถาวรงานนี้ (Soft Delete)</button>
     </div>` : ""}
   `;
 
   document.getElementById("modal-close-btn").addEventListener("click", closeJobModal);
 
-  // ---------------- Pricing Section ----------------
-  renderPricingSection(job, isOwnerOrAdmin);
-
-  // ---------------- Payment Section ----------------
+  renderJobInfoSection(job, isOwnerOrAdmin);
   renderPaymentSection(job, paymentTransactions, totalPaid, balance, paymentInfo, isOwnerOrAdmin);
-
-  // ---------------- Appointment Section ----------------
   renderAppointmentSection(job, isOwnerOrAdmin);
-
-  // ---------------- Notification History ----------------
   renderNotificationHistorySection(customerNotifications, isOwnerOrAdmin, job.id);
-
-  // ---------------- Status Buttons ----------------
   renderStatusButtons(job);
 
-  // ---------------- Note ----------------
-  document.getElementById("btn-save-note").addEventListener("click", preventDoubleSubmit(async () => {
-    const noteEl = document.getElementById("note-input");
-    try {
-      await addJobNote({ accessToken: getAccessToken(), jobId, internalNote: noteEl.value });
-      showToast("บันทึกหมายเหตุสำเร็จ", "success");
-      await refreshJobs();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  }));
-
-  // ---------------- Archive (Owner/Admin) ----------------
   const archiveBtn = document.getElementById("btn-archive-job");
   if (archiveBtn) {
     archiveBtn.addEventListener("click", preventDoubleSubmit(async () => {
@@ -735,10 +738,10 @@ function renderNotificationHistorySection(notifications, isOwnerOrAdmin, jobId) 
 }
 
 // ============================================================================
-// Pricing Section (ข้อ 4: เพิ่มปุ่ม % คำนวณเงินมัดจำอัตโนมัติ)
+// Job Info Section (ข้อ 2: รวมราคา + หมายเหตุ เป็นปุ่มเดียว)
 // ============================================================================
-function renderPricingSection(job, isOwnerOrAdmin) {
-  const section = document.getElementById("pricing-section");
+function renderJobInfoSection(job, isOwnerOrAdmin) {
+  const section = document.getElementById("job-info-section");
 
   if (!isOwnerOrAdmin) {
     section.innerHTML = `
@@ -747,66 +750,79 @@ function renderPricingSection(job, isOwnerOrAdmin) {
       <div class="info-row"><span class="label">ราคาสรุปจริง</span><span class="value">${job.price_final != null ? job.price_final.toLocaleString() + " บาท" : "ยังไม่ระบุ"}</span></div>
       <div class="info-row"><span class="label">เงินมัดจำที่ต้องการ</span><span class="value">${(job.deposit_amount ?? 0).toLocaleString()} บาท</span></div>
       <div class="readonly-note">การแก้ไขราคาทำได้เฉพาะเจ้าของร้านและผู้ดูแลระบบเท่านั้น</div>
+
+      <h3 style="margin-top:14px;">📝 หมายเหตุภายใน (ร้านเท่านั้น ลูกค้าไม่เห็น)</h3>
+      <textarea class="note-input" id="note-input" placeholder="เพิ่มหมายเหตุ...">${job.internal_note ?? ""}</textarea>
+      <button class="btn btn-secondary" id="btn-save-job-info" style="margin-top:8px;">บันทึกหมายเหตุ</button>
     `;
-    return;
+  } else {
+    section.innerHTML = `
+      <h3>💰 ราคา (แก้ไขได้)</h3>
+      <label style="font-weight:600;">ราคาประเมิน (บาท)</label>
+      <input type="number" min="0" step="0.01" class="price-input" id="price-estimate-input" value="${job.price_estimate ?? ""}" placeholder="ยังไม่ระบุ" />
+      <label style="font-weight:600;">ราคาสรุปจริง (บาท)</label>
+      <input type="number" min="0" step="0.01" class="price-input" id="price-final-input" value="${job.price_final ?? ""}" placeholder="ยังไม่ระบุ" />
+      <label style="font-weight:600;">เงินมัดจำที่ต้องการ (บาท)</label>
+      <div class="quick-percent-row">
+        <button type="button" class="btn btn-secondary" id="btn-deposit-25">มัดจำ 25%</button>
+        <button type="button" class="btn btn-secondary" id="btn-deposit-50">มัดจำ 50%</button>
+      </div>
+      <input type="number" min="0" step="0.01" class="price-input" id="deposit-amount-input" value="${job.deposit_amount ?? 0}" />
+
+      <h3 style="margin-top:14px;">📝 หมายเหตุภายใน (ร้านเท่านั้น ลูกค้าไม่เห็น)</h3>
+      <textarea class="note-input" id="note-input" placeholder="เพิ่มหมายเหตุ...">${job.internal_note ?? ""}</textarea>
+
+      <button class="btn btn-primary" id="btn-save-job-info" style="margin-top:12px;">💾 บันทึกข้อมูลงาน</button>
+    `;
+
+    function setDepositByPercent(percent) {
+      const estEl = document.getElementById("price-estimate-input");
+      const depositEl = document.getElementById("deposit-amount-input");
+      const estimate = Number(estEl.value);
+      if (!estEl.value || Number.isNaN(estimate) || estimate <= 0) {
+        showToast("กรุณากรอกราคาประเมินก่อน", "error");
+        return;
+      }
+      depositEl.value = Math.round(estimate * percent);
+    }
+    document.getElementById("btn-deposit-25").addEventListener("click", () => setDepositByPercent(0.25));
+    document.getElementById("btn-deposit-50").addEventListener("click", () => setDepositByPercent(0.5));
   }
 
-  section.innerHTML = `
-    <h3>💰 ราคา (แก้ไขได้)</h3>
-    <label style="font-weight:600;">ราคาประเมิน (บาท)</label>
-    <input type="number" min="0" step="0.01" class="price-input" id="price-estimate-input" value="${job.price_estimate ?? ""}" placeholder="ยังไม่ระบุ" />
-    <label style="font-weight:600;">ราคาสรุปจริง (บาท)</label>
-    <input type="number" min="0" step="0.01" class="price-input" id="price-final-input" value="${job.price_final ?? ""}" placeholder="ยังไม่ระบุ" />
-    <label style="font-weight:600;">เงินมัดจำที่ต้องการ (บาท)</label>
-    <div class="quick-percent-row">
-      <button type="button" class="btn btn-secondary" id="btn-deposit-25">มัดจำ 25%</button>
-      <button type="button" class="btn btn-secondary" id="btn-deposit-50">มัดจำ 50%</button>
-    </div>
-    <input type="number" min="0" step="0.01" class="price-input" id="deposit-amount-input" value="${job.deposit_amount ?? 0}" />
-    <button class="btn btn-secondary" id="btn-save-pricing">บันทึกราคา</button>
-  `;
-
-  // ปุ่มคำนวณเงินมัดจำจาก % ของราคาประเมิน
-  function setDepositByPercent(percent) {
-    const estEl = document.getElementById("price-estimate-input");
-    const depositEl = document.getElementById("deposit-amount-input");
-    const estimate = Number(estEl.value);
-    if (!estEl.value || Number.isNaN(estimate) || estimate <= 0) {
-      showToast("กรุณากรอกราคาประเมินก่อน", "error");
-      return;
-    }
-    depositEl.value = Math.round(estimate * percent);
-  }
-  document.getElementById("btn-deposit-25").addEventListener("click", () => setDepositByPercent(0.25));
-  document.getElementById("btn-deposit-50").addEventListener("click", () => setDepositByPercent(0.5));
-
-  document.getElementById("btn-save-pricing").addEventListener("click", preventDoubleSubmit(async () => {
-    const estEl = document.getElementById("price-estimate-input");
-    const finalEl = document.getElementById("price-final-input");
-    const depositEl = document.getElementById("deposit-amount-input");
-
-    const priceEstimate = estEl.value === "" ? null : Number(estEl.value);
-    const priceFinal = finalEl.value === "" ? null : Number(finalEl.value);
-    const depositAmount = depositEl.value === "" ? 0 : Number(depositEl.value);
-
-    if (
-      (priceEstimate !== null && (Number.isNaN(priceEstimate) || priceEstimate < 0)) ||
-      (priceFinal !== null && (Number.isNaN(priceFinal) || priceFinal < 0)) ||
-      Number.isNaN(depositAmount) || depositAmount < 0
-    ) {
-      showToast("ราคาต้องเป็นตัวเลขที่ไม่ติดลบ", "error");
-      return;
-    }
+  document.getElementById("btn-save-job-info").addEventListener("click", preventDoubleSubmit(async () => {
+    const noteEl = document.getElementById("note-input");
 
     try {
-      await setJobPricing({
-        accessToken: getAccessToken(),
-        jobId: job.id,
-        priceEstimate,
-        priceFinal,
-        depositAmount,
-      });
-      showToast("บันทึกราคาสำเร็จ", "success");
+      if (isOwnerOrAdmin) {
+        const estEl = document.getElementById("price-estimate-input");
+        const finalEl = document.getElementById("price-final-input");
+        const depositEl = document.getElementById("deposit-amount-input");
+
+        const priceEstimate = estEl.value === "" ? null : Number(estEl.value);
+        const priceFinal = finalEl.value === "" ? null : Number(finalEl.value);
+        const depositAmount = depositEl.value === "" ? 0 : Number(depositEl.value);
+
+        if (
+          (priceEstimate !== null && (Number.isNaN(priceEstimate) || priceEstimate < 0)) ||
+          (priceFinal !== null && (Number.isNaN(priceFinal) || priceFinal < 0)) ||
+          Number.isNaN(depositAmount) || depositAmount < 0
+        ) {
+          showToast("ราคาต้องเป็นตัวเลขที่ไม่ติดลบ", "error");
+          return;
+        }
+
+        await setJobPricing({
+          accessToken: getAccessToken(),
+          jobId: job.id,
+          priceEstimate,
+          priceFinal,
+          depositAmount,
+        });
+      }
+
+      await addJobNote({ accessToken: getAccessToken(), jobId: job.id, internalNote: noteEl.value });
+
+      showToast("บันทึกข้อมูลงานสำเร็จ", "success");
       await refreshJobs();
       openJobModal(job.id);
     } catch (err) {
@@ -816,7 +832,7 @@ function renderPricingSection(job, isOwnerOrAdmin) {
 }
 
 // ============================================================================
-// Payment Section (ข้อ 5: ตัดตัวเลือก รับเงิน/คืนเงิน ออก ให้เป็น "รับเงิน" เสมอ)
+// Payment Section (เพิ่มปุ่มเติมยอดคงเหลืออัตโนมัติ)
 // ============================================================================
 let pendingEvidenceFile = null;
 
@@ -850,6 +866,8 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
         </div>
       `).join("");
 
+  const hasRemainingBalance = job.price_final != null && balance > 0;
+
   section.innerHTML = `
     <h3>💳 การชำระเงิน</h3>
     <div class="info-row"><span class="label">สถานะการชำระ</span><span class="value">${paymentInfo.icon} ${paymentInfo.label}</span></div>
@@ -858,6 +876,7 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
 
     <div style="margin-top:16px;">
       <h3 style="font-size:0.95rem;">➕ บันทึกรับเงิน</h3>
+      ${hasRemainingBalance ? `<button type="button" class="btn btn-secondary" id="btn-fill-full-balance">ชำระยอดคงเหลือทั้งหมด (${balance.toLocaleString()} บาท)</button>` : ""}
       <input type="number" min="0.01" step="0.01" class="payment-amount-input" id="payment-amount-input" placeholder="จำนวนเงิน (บาท)" />
       <select class="payment-method-select" id="payment-method-select">
         <option value="cash">เงินสด</option>
@@ -873,7 +892,12 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     </div>
   `;
 
-  // Void buttons
+  if (hasRemainingBalance) {
+    document.getElementById("btn-fill-full-balance").addEventListener("click", () => {
+      document.getElementById("payment-amount-input").value = balance;
+    });
+  }
+
   if (isOwnerOrAdmin) {
     section.querySelectorAll("[data-void-tx-id]").forEach((btn) => {
       btn.addEventListener("click", preventDoubleSubmit(async () => {
@@ -896,7 +920,6 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     });
   }
 
-  // Evidence file picker
   pendingEvidenceFile = null;
   const evidenceInput = document.getElementById("payment-evidence-input");
   const evidencePreview = document.getElementById("evidence-preview");
@@ -914,7 +937,6 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     evidencePreview.innerHTML = `<img src="${URL.createObjectURL(file)}" style="width:80px;height:80px;object-fit:cover;border-radius:10px;" />`;
   });
 
-  // Record payment (ประเภทรายการเป็น "รับเงิน" (payment) เสมอ ไม่มีตัวเลือกคืนเงินแล้ว)
   document.getElementById("btn-record-payment").addEventListener("click", preventDoubleSubmit(async () => {
     const amountValue = Number(document.getElementById("payment-amount-input").value);
     const paymentMethod = document.getElementById("payment-method-select").value;
@@ -1022,41 +1044,36 @@ function renderAppointmentSection(job, isOwnerOrAdmin) {
   }));
 }
 
+// ============================================================================
+// Status Buttons (ข้อ 5: ลดขั้นตอน — กดครั้งเดียวจบสำหรับเดินหน้า)
+// ============================================================================
 function renderStatusButtons(job) {
   const container = document.getElementById("status-buttons");
-  const transitions = STATUS_TRANSITIONS[job.status] ?? [];
+  const nextStep = STATUS_NEXT_STEP[job.status];
+  const canCancel = job.status === "waiting" || job.status === "in_progress";
+  const canRevert = job.status === "completed";
 
-  if (transitions.length === 0) {
+  if (!nextStep && !canCancel && !canRevert) {
     container.innerHTML = `<div class="readonly-note">ไม่มีการเปลี่ยนสถานะที่ทำได้ในขั้นตอนนี้</div>`;
     return;
   }
 
-  container.innerHTML = transitions.map((t, idx) =>
-    `<button class="btn ${t.cls}" data-to-status="${t.to}" id="status-btn-${idx}">${t.label}</button>`,
-  ).join("");
+  let html = "";
+  if (nextStep) {
+    html += `<button class="btn ${nextStep.cls} btn-big-step" id="btn-next-step">${nextStep.label}</button>`;
+  }
+  if (canRevert) {
+    html += `<button class="btn btn-secondary btn-sm" id="btn-revert-step" style="margin-top:6px;">↩️ ย้อนกลับไปกำลังทำ</button>`;
+  }
+  if (canCancel) {
+    html += `<button class="btn btn-secondary btn-sm" id="btn-cancel-step" style="margin-top:6px;color:var(--danger);border-color:var(--danger);">🚫 ยกเลิกงานนี้</button>`;
+  }
+  container.innerHTML = html;
 
-  transitions.forEach((t, idx) => {
-    document.getElementById(`status-btn-${idx}`).addEventListener("click", preventDoubleSubmit(async () => {
-      let reason = null;
-      if (t.to === "cancelled") {
-        const result = await showConfirmDialog({
-          text: `ต้องการยกเลิกงาน ${job.job_number} ใช่หรือไม่?`,
-          requireReason: true,
-          confirmLabel: "ยกเลิกงาน",
-        });
-        if (!result.confirmed) return;
-        reason = result.reason;
-      } else {
-        const result = await showConfirmDialog({
-          text: `ต้องการเปลี่ยนสถานะเป็น "${t.label}" ใช่หรือไม่?`,
-          requireReason: false,
-          confirmLabel: "ยืนยัน",
-        });
-        if (!result.confirmed) return;
-      }
-
+  if (nextStep) {
+    document.getElementById("btn-next-step").addEventListener("click", preventDoubleSubmit(async () => {
       try {
-        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: t.to, reason });
+        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: nextStep.to, reason: null });
         showToast("เปลี่ยนสถานะสำเร็จ", "success");
         await refreshJobs();
         closeJobModal();
@@ -1064,7 +1081,45 @@ function renderStatusButtons(job) {
         showToast(err.message, "error");
       }
     }));
-  });
+  }
+
+  if (canRevert) {
+    document.getElementById("btn-revert-step").addEventListener("click", preventDoubleSubmit(async () => {
+      const result = await showConfirmDialog({
+        text: "ต้องการย้อนกลับไปสถานะ \"กำลังทำ\" ใช่หรือไม่?",
+        requireReason: false,
+        confirmLabel: "ยืนยัน",
+      });
+      if (!result.confirmed) return;
+      try {
+        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "in_progress", reason: null });
+        showToast("เปลี่ยนสถานะสำเร็จ", "success");
+        await refreshJobs();
+        closeJobModal();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }));
+  }
+
+  if (canCancel) {
+    document.getElementById("btn-cancel-step").addEventListener("click", preventDoubleSubmit(async () => {
+      const result = await showConfirmDialog({
+        text: `ต้องการยกเลิกงาน ${job.job_number} ใช่หรือไม่?`,
+        requireReason: true,
+        confirmLabel: "ยกเลิกงาน",
+      });
+      if (!result.confirmed) return;
+      try {
+        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "cancelled", reason: result.reason });
+        showToast("เปลี่ยนสถานะสำเร็จ", "success");
+        await refreshJobs();
+        closeJobModal();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }));
+  }
 }
 
 function closeJobModal() {
