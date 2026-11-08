@@ -1,16 +1,15 @@
 // shared/liff-adapter.js
-// ชั้นกลาง (Adapter) คั่นระหว่างหน้าฟอร์มกับ LINE LIFF SDK จริง
+// ชั้นกลาง (Adapter) คั่นระหว่างหน้าฟอร์ม/หน้าสถานะกับ LINE LIFF SDK จริง
 //
-// เหตุผลที่ต้องมีชั้นนี้: ร้านยังไม่มี LINE Official Account/LIFF App จริง
-// (จะตั้งค่าใน Phase 8) จึงเปิด "โหมดจำลอง" (Mock Mode) ไว้ชั่วคราวผ่าน
-// APP_CONFIG.LIFF_MOCK_MODE เพื่อให้ทดสอบฟอร์ม/อัปโหลดรูป/บันทึกงานได้ครบ Flow
-// โดยไม่ต้องรอ LIFF จริง เมื่อถึง Phase 8 ให้เปลี่ยนค่า LIFF_MOCK_MODE เป็น false
-// และใส่ LIFF_ID จริงใน config.js เท่านั้น ไม่ต้องแก้โค้ดหน้าฟอร์มใด ๆ เพิ่มเติม
+// สำคัญ: ไฟล์นี้ใช้ร่วมกันหลายหน้า (customer-form, customer-status) ซึ่งแต่ละ
+// หน้ามี LIFF ID เป็นของตัวเอง (คนละ LIFF App กัน) initLiff() จึงต้องรับพารามิเตอร์
+// ระบุว่าเป็นหน้าไหน แล้วเลือก LIFF ID ที่ถูกต้องจาก config.js ให้ตรงกับหน้านั้น
+// (เวอร์ชันก่อนหน้านี้ Hardcode ใช้ LIFF_ID_CUSTOMER_FORM เสมอ ทำให้หน้าอื่น
+// เรียก liff.init() ด้วย ID ผิดตัว และขึ้น Error "Invalid LIFF ID")
 //
-// ข้อควรระวังด้านความปลอดภัย: Mock Mode ต้องถูกปิดเสมอใน Production จริง เพราะ
-// client_id token ปลอมจะถูก Edge Function "customer-identify" ปฏิเสธอยู่ดี
-// (ฝั่ง Server ตรวจสอบ ALLOW_MOCK_CUSTOMER_IDENTITY Secret แยกต่างหาก ถ้าปิดไว้
-// จะใช้ Mock ไม่ได้แม้ Client จะส่งมาก็ตาม)
+// เหตุผลที่ต้องมีชั้นนี้: ร้านยังไม่มี LINE Official Account/LIFF App จริงตอน
+// Phase 4 จึงเปิด "โหมดจำลอง" (Mock Mode) ไว้ชั่วคราวผ่าน APP_CONFIG.LIFF_MOCK_MODE
+// (ปัจจุบันปิดแล้วตั้งแต่ Phase 8 เพราะมี LINE Official Account จริง)
 
 import { APP_CONFIG } from "./config.js";
 
@@ -45,17 +44,30 @@ function getOrCreateMockIdentity() {
   return mockIdentity;
 }
 
+/** เลือก LIFF ID ที่ถูกต้องตามหน้าที่ระบุ ("form" หรือ "status") */
+function resolveLiffId(page) {
+  if (page === "status") return APP_CONFIG.LIFF_ID_CUSTOMER_STATUS;
+  return APP_CONFIG.LIFF_ID_CUSTOMER_FORM;
+}
+
 /**
  * เตรียมความพร้อม LIFF (หรือจำลองถ้าอยู่ใน Mock Mode)
+ * @param {"form"|"status"} page - ระบุว่าเป็นหน้าฝากงาน ("form") หรือหน้าเช็คสถานะ ("status")
+ *                                 ค่าเริ่มต้นคือ "form" เพื่อไม่กระทบโค้ดเดิมที่เรียกแบบไม่ส่งพารามิเตอร์
  * คืนค่า { isReady: boolean, isLoggedIn: boolean }
  */
-export async function initLiff() {
+export async function initLiff(page = "form") {
   if (APP_CONFIG.LIFF_MOCK_MODE) {
     return { isReady: true, isLoggedIn: true, isMock: true };
   }
 
+  const liffId = resolveLiffId(page);
+  if (!liffId || liffId === "__REPLACE_WITH_LIFF_ID__") {
+    throw new Error("ยังไม่ได้ตั้งค่า LIFF ID สำหรับหน้านี้ กรุณาติดต่อผู้ดูแลระบบ");
+  }
+
   const liff = await loadLiffSdkScript();
-  await liff.init({ liffId: APP_CONFIG.LIFF_ID_CUSTOMER_FORM });
+  await liff.init({ liffId });
 
   if (!liff.isLoggedIn()) {
     liff.login();
