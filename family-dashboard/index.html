@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>QE Tailor - Dashboard ร้าน</title>
+<style>
+  :root {
+    --primary: #1a73e8;
+    --primary-dark: #0d47a1;
+    --success: #1e8e3e;
+    --danger: #d93025;
+    --warning: #f9a825;
+    --purple: #8e24aa;
+    --grey: #5f6368;
+    --text: #202124;
+    --text-muted: #5f6368;
+    --border: #dadce0;
+    --bg: #f4f6f8;
+    font-size: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Noto Sans Thai", -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-bottom: 40px;
+  }
+  .hidden { display: none !important; }
+  .container { max-width: 720px; margin: 0 auto; padding: 12px; }
+
+  /* ---------------- Header ---------------- */
+  .app-header {
+    background: var(--primary);
+    color: #fff;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .app-header .title { font-size: 1.15rem; font-weight: 700; }
+  .app-header .user-info { font-size: 0.85rem; text-align: right; }
+  .app-header button.icon-btn {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: #fff;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    margin-left: 8px;
+  }
+  .offline-banner {
+    background: #fff3e0;
+    color: #e65100;
+    text-align: center;
+    padding: 8px;
+    font-size: 0.9rem;
+  }
+
+  /* ---------------- Cards (Summary) ---------------- */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin: 14px 0;
+  }
+  .summary-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 14px;
+    text-align: center;
+    cursor: pointer;
+    border: 2px solid transparent;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .summary-card.active { border-color: var(--primary); }
+  .summary-card .count { font-size: 1.8rem; font-weight: 800; }
+  .summary-card .label { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+  .summary-card .icon { font-size: 1.4rem; }
+
+  /* ---------------- Search / Filters ---------------- */
+  .toolbar {
+    background: #fff;
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .toolbar input[type="text"], .toolbar select, .toolbar input[type="date"] {
+    width: 100%;
+    font-size: 1rem;
+    padding: 12px;
+    border-radius: 12px;
+    border: 2px solid var(--border);
+    margin-bottom: 10px;
+  }
+  .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .toolbar-toggle {
+    background: none;
+    border: none;
+    color: var(--primary);
+    font-weight: 700;
+    cursor: pointer;
+    padding: 6px 0;
+  }
+
+  /* ---------------- Calendar ---------------- */
+  .calendar-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .calendar-header button {
+    background: #f1f3f4;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    text-align: center;
+  }
+  .calendar-weekday { font-size: 0.75rem; color: var(--text-muted); padding: 4px 0; }
+  .calendar-cell {
+    aspect-ratio: 1;
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    cursor: pointer;
+    background: #f8f9fa;
+  }
+  .calendar-cell.empty { background: transparent; cursor: default; }
+  .calendar-cell.today { border: 2px solid var(--primary); font-weight: 800; }
+  .calendar-cell.has-jobs { background: #e8f0fe; }
+  .calendar-cell.selected { background: var(--primary); color: #fff; }
+  .calendar-cell .dot-count { font-size: 0.65rem; color: var(--primary-dark); }
+  .calendar-cell.selected .dot-count { color: #fff; }
+
+  /* ---------------- Job List ---------------- */
+  .job-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 10px 2px;
+    font-weight: 700;
+  }
+  .job-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    cursor: pointer;
+  }
+  .job-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .job-card .job-number { font-weight: 700; font-size: 1.05rem; }
+  .job-card .customer-name { color: var(--text-muted); font-size: 0.9rem; margin-top: 2px; }
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .job-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+  .urgent-tag {
+    background: #fdecea;
+    color: var(--danger);
+    border-radius: 8px;
+    padding: 2px 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  /* ---------------- States ---------------- */
+  .center-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 50vh;
+    text-align: center;
+    padding: 24px;
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 5px solid #e0e0e0;
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 14px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------------- Login Screen ---------------- */
+  .login-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 420px;
+    margin: 40px auto;
+  }
+  .identity-btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+    border-radius: 12px;
+    border: 2px solid #ddd;
+    background: #fafafa;
+    cursor: pointer;
+    text-align: left;
+  }
+  .identity-btn.selected { border-color: var(--primary); background: #e8f0fe; }
+  input[type="password"] {
+    width: 100%;
+    font-size: 1.6rem;
+    letter-spacing: 0.5rem;
+    text-align: center;
+    padding: 14px;
+    border-radius: 12px;
+    border: 2px solid #ddd;
+    box-sizing: border-box;
+    margin: 16px 0;
+  }
+  label.checkbox-row { display:flex; align-items:center; gap:8px; font-size:1rem; margin-bottom:16px; }
+
+  /* ---------------- Buttons ---------------- */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    border-radius: 14px;
+    border: none;
+    cursor: pointer;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-purple { background: var(--purple); color: #fff; }
+  .btn-secondary { background: #fff; color: var(--primary); border: 2px solid var(--primary); }
+  .btn:disabled { background: #9aa0a6; color: #fff; cursor: not-allowed; }
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* ---------------- Modal (Job Detail) ---------------- */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 100;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .modal-sheet {
+    background: #fff;
+    width: 100%;
+    max-width: 640px;
+    max-height: 92vh;
+    overflow-y: auto;
+    border-radius: 20px 20px 0 0;
+    padding: 20px;
+  }
+  .modal-close-btn {
+    position: sticky;
+    top: 0;
+    float: right;
+    background: #f1f3f4;
+    border: none;
+    border-radius: 50%;
+    width: 36px; height: 36px;
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+  .modal-section {
+    border-top: 1px solid #eee;
+    padding-top: 14px;
+    margin-top: 14px;
+  }
+  .modal-section h3 { font-size: 1rem; margin: 0 0 10px 0; }
+  .info-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.95rem; gap: 10px; }
+  .info-row .label { color: var(--text-muted); white-space: nowrap; }
+  .info-row .value { text-align: right; }
+  textarea.note-input {
+    width: 100%;
+    min-height: 90px;
+    padding: 12px;
+    border-radius: 12px;
+    border: 2px solid var(--border);
+    font-family: inherit;
+    font-size: 0.95rem;
+  }
+  select.assign-select, input.confirm-date-input, select.confirm-time-select {
+    width: 100%;
+    font-size: 1rem;
+    padding: 12px;
+    border-radius: 12px;
+    border: 2px solid var(--border);
+    margin-bottom: 10px;
+  }
+  .photo-grid-view {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .photo-grid-view img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; }
+  .warning-box {
+    background: #fff8e1;
+    border: 1px solid var(--warning);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 0.9rem;
+    margin-bottom: 14px;
+  }
+  .readonly-note {
+    background: #f1f3f4;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  /* ---------------- Confirm Dialog ---------------- */
+  .confirm-dialog-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .confirm-dialog {
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px;
+    max-width: 380px;
+    width: 100%;
+  }
+  .confirm-dialog p { font-size: 1rem; margin-bottom: 14px; }
+  .confirm-dialog textarea {
+    width: 100%;
+    min-height: 70px;
+    padding: 10px;
+    border-radius: 10px;
+    border: 2px solid var(--border);
+    margin-bottom: 14px;
+    font-family: inherit;
+  }
+</style>
+</head>
+<body>
+
+<!-- ======================== Loading Screen ======================== -->
+<div id="screen-loading" class="center-screen">
+  <div class="spinner"></div>
+  <p>กำลังเตรียมระบบ...</p>
+</div>
+
+<!-- ======================== Login Screen ======================== -->
+<div id="screen-login" class="container hidden">
+  <div class="login-card">
+    <h2 style="text-align:center;">🧵 QE Tailor Dashboard</h2>
+    <div id="identity-list"></div>
+    <div id="pin-section" class="hidden">
+      <p>กรอก PIN 6 หลักของ <strong id="selected-name"></strong></p>
+      <input type="password" id="pin-input" inputmode="numeric" maxlength="6" placeholder="••••••" />
+      <label class="checkbox-row">
+        <input type="checkbox" id="remember-device-checkbox" />
+        จดจำอุปกรณ์นี้ (ไม่ต้องใส่ PIN ซ้ำครั้งหน้า)
+      </label>
+      <button class="btn btn-primary" id="btn-login">เข้าสู่ระบบ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== Main Dashboard ======================== -->
+<div id="screen-dashboard" class="hidden">
+  <div class="app-header">
+    <div class="title">🧵 QE Tailor</div>
+    <div style="display:flex;align-items:center;">
+      <div class="user-info"><span id="header-user-name"></span><br/><span id="header-user-role" style="opacity:0.8;"></span></div>
+      <button class="icon-btn" id="btn-refresh">🔄</button>
+      <button class="icon-btn" id="btn-logout">ออก</button>
+    </div>
+  </div>
+
+  <div id="offline-banner" class="offline-banner hidden">📶 ไม่มีสัญญาณอินเทอร์เน็ต ข้อมูลอาจไม่เป็นปัจจุบัน</div>
+
+  <div class="container">
+    <div class="summary-grid" id="summary-grid"></div>
+
+    <div class="toolbar">
+      <input type="text" id="search-input" placeholder="🔍 ค้นหาชื่อ เบอร์โทร หรือเลขงาน" />
+      <button class="toolbar-toggle" id="btn-toggle-filters">ตัวกรองเพิ่มเติม ▾</button>
+      <div id="filter-panel" class="hidden">
+        <div class="filter-row">
+          <select id="filter-status">
+            <option value="">สถานะ: ทั้งหมด</option>
+            <option value="pending_confirmation">รอยืนยันนัด</option>
+            <option value="waiting">รอทำ</option>
+            <option value="in_progress">กำลังทำ</option>
+            <option value="completed">เสร็จแล้ว</option>
+            <option value="picked_up">ลูกค้ารับแล้ว</option>
+            <option value="cancelled">ยกเลิก</option>
+          </select>
+          <select id="filter-job-type">
+            <option value="">ประเภทงาน: ทั้งหมด</option>
+          </select>
+        </div>
+        <div class="filter-row">
+          <input type="date" id="filter-date-from" />
+          <input type="date" id="filter-date-to" />
+        </div>
+        <select id="filter-assignee">
+          <option value="">ผู้รับผิดชอบ: ทั้งหมด</option>
+          <option value="__unassigned__">ยังไม่มอบหมาย</option>
+        </select>
+        <button class="btn btn-secondary" id="btn-clear-filters" style="margin-top:4px;">ล้างตัวกรองทั้งหมด</button>
+      </div>
+    </div>
+
+    <div class="calendar-card">
+      <div class="calendar-header">
+        <button id="btn-cal-prev">◀</button>
+        <span id="calendar-month-label"></span>
+        <button id="btn-cal-next">▶</button>
+      </div>
+      <div class="calendar-grid" id="calendar-weekdays"></div>
+      <div class="calendar-grid" id="calendar-grid" style="margin-top:4px;"></div>
+    </div>
+
+    <div class="job-list-header">
+      <span>รายการงาน (<span id="job-count">0</span>)</span>
+    </div>
+    <div id="job-list"></div>
+    <div id="job-list-empty" class="center-screen hidden">
+      <p style="font-size:2.5rem;">📭</p>
+      <p>ไม่พบงานที่ตรงกับเงื่อนไข</p>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== Job Detail Modal ======================== -->
+<div id="job-modal-backdrop" class="modal-backdrop hidden">
+  <div class="modal-sheet" id="job-modal-sheet"></div>
+</div>
+
+<!-- ======================== Confirm Dialog (generic) ======================== -->
+<div id="confirm-dialog-backdrop" class="confirm-dialog-backdrop hidden">
+  <div class="confirm-dialog">
+    <p id="confirm-dialog-text"></p>
+    <textarea id="confirm-dialog-reason" class="hidden" placeholder="ระบุเหตุผล..."></textarea>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="confirm-dialog-cancel" style="margin-bottom:0;">ยกเลิก</button>
+      <button class="btn btn-danger" id="confirm-dialog-ok" style="margin-bottom:0;">ยืนยัน</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./dashboard.js"></script>
+</body>
+</html>
