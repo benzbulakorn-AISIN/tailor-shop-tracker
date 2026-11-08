@@ -101,7 +101,6 @@
   .btn-primary { background: var(--primary); color: #fff; }
   .btn-primary:disabled { background: #9aa0a6; cursor: not-allowed; }
   .btn-secondary { background: #fff; color: var(--primary); border: 2px solid var(--primary); }
-  .btn-outline-danger { background: #fff; color: var(--danger); border: 2px solid var(--danger); }
   .hidden { display: none !important; }
   .line-badge {
     display: flex;
@@ -113,7 +112,6 @@
     margin-bottom: 16px;
     font-size: 0.9rem;
   }
-  .line-badge img { width: 32px; height: 32px; border-radius: 50%; }
   .photo-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -159,35 +157,24 @@
     display: flex;
     gap: 8px;
   }
-  .summary-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px 0;
-    border-bottom: 1px solid #eee;
-    font-size: 0.95rem;
-    gap: 12px;
-  }
-  .summary-row .label { color: var(--text-muted); white-space: nowrap; }
-  .summary-row .value { text-align: right; }
   .consent-text {
-    font-size: 0.9rem;
-    line-height: 1.6;
+    font-size: 0.95rem;
+    line-height: 1.7;
     color: var(--text);
-    max-height: 220px;
-    overflow-y: auto;
     background: #f8f9fa;
     border-radius: 12px;
-    padding: 14px;
+    padding: 16px;
     margin-bottom: 16px;
   }
   .consent-check {
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    margin-bottom: 14px;
-    font-size: 0.95rem;
+    margin-bottom: 16px;
+    font-size: 1rem;
+    font-weight: 600;
   }
-  .consent-check input { width: 22px; height: 22px; margin-top: 2px; flex-shrink: 0; }
+  .consent-check input { width: 24px; height: 24px; margin-top: 2px; flex-shrink: 0; }
   .center-screen {
     display: flex;
     flex-direction: column;
@@ -216,7 +203,6 @@
     color: var(--success);
     margin: 16px 0;
   }
-  .char-counter { text-align: right; font-size: 0.8rem; color: var(--text-muted); margin-top: -10px; margin-bottom: 12px; }
 </style>
 </head>
 <body>
@@ -236,29 +222,18 @@
   <button class="btn btn-primary" style="margin-top:16px;max-width:240px;" onclick="location.reload()">ลองใหม่อีกครั้ง</button>
 </div>
 
-<!-- ======================== Consent Screen ======================== -->
+<!-- ======================== Consent Screen (ปรับให้ง่าย: ข้อความเดียว + ติ๊กเดียว + ปุ่มเดียว) ======================== -->
 <div id="screen-consent" class="container hidden">
   <div class="card">
     <h2>🔒 แจ้งวัตถุประสงค์การเก็บข้อมูล</h2>
     <div class="consent-text">
-      ร้านจะเก็บข้อมูลต่อไปนี้เพื่อใช้ในการติดต่อและติดตามงานตัดเย็บของท่านเท่านั้น:<br/><br/>
-      • รหัสผู้ใช้ LINE (เพื่อส่งข้อความแจ้งเตือนสถานะงาน)<br/>
-      • ชื่อ-นามสกุล และเบอร์โทรศัพท์<br/>
-      • รูปถ่ายผ้า/งานที่ฝาก<br/>
-      • รายละเอียดงานและประวัติการชำระเงินที่เกี่ยวข้องกับงานของท่าน<br/><br/>
-      ข้อมูลจะถูกเก็บไว้ตามระยะเวลาที่ร้านกำหนดเพื่อการติดตามงานเท่านั้น และจะไม่ถูกเปิดเผยต่อบุคคลภายนอก
+      ร้านจะเก็บข้อมูลต่อไปนี้เพื่อใช้ติดต่อและติดตามงานตัดเย็บของท่านเท่านั้น ได้แก่
+      รหัสผู้ใช้ LINE ชื่อ-เบอร์โทร รูปถ่ายงาน และรายละเอียดงาน/การชำระเงินที่เกี่ยวข้อง
+      ข้อมูลจะไม่ถูกเปิดเผยต่อบุคคลภายนอก
     </div>
     <label class="consent-check">
-      <input type="checkbox" id="consent-line-profile" />
-      <span>ยินยอมให้ร้านเชื่อมโยงบัญชี LINE ของฉันเพื่อติดต่อแจ้งเตือนสถานะงาน</span>
-    </label>
-    <label class="consent-check">
-      <input type="checkbox" id="consent-photo-storage" />
-      <span>ยินยอมให้ร้านจัดเก็บรูปถ่ายผ้า/งานที่ฝาก</span>
-    </label>
-    <label class="consent-check">
-      <input type="checkbox" id="consent-data-processing" />
-      <span>ยินยอมให้ร้านประมวลผลข้อมูลเพื่อใช้ติดตามงานตัดเย็บของฉัน</span>
+      <input type="checkbox" id="consent-all-checkbox" />
+      <span>ยินยอมให้ร้านเก็บและใช้ข้อมูลตามที่แจ้งข้างต้น</span>
     </label>
     <button class="btn btn-primary" id="btn-consent-continue">ยินยอมและดำเนินการต่อ</button>
   </div>
@@ -305,7 +280,6 @@
     <label class="required" for="select-quantity">จำนวนชิ้น</label>
     <select id="select-quantity">
       <option value="">-- เลือกจำนวน --</option>
-      <!-- เติมด้วย JavaScript (1-10 + มากกว่า 10) -->
     </select>
     <div class="field-error" id="error-quantity">กรุณาเลือกจำนวนชิ้น</div>
 
@@ -396,7 +370,7 @@
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
-  let lineIdentityContext = null; // { mode, idToken, mockCustomer }
+  let lineIdentityContext = null;
   let jobTypesList = [];
   let selectedPhotoFiles = [];
   let createdJobId = null;
@@ -412,7 +386,6 @@
     try {
       const liffState = await initLiff();
       if (!liffState.isLoggedIn) {
-        // กำลังถูก Redirect ไป LINE Login อยู่ ให้รอ (ไม่ต้องทำอะไรต่อ)
         return;
       }
       lineIdentityContext = await getLineIdentity();
@@ -430,16 +403,8 @@
   }
 
   async function loadJobTypes() {
-    try {
-      // job_types อ่านได้แม้ยังไม่มี Customer JWT ไม่ได้ เพราะ RLS ต้องการ app_role
-      // จึงใช้รายการสำรอง (Fallback) ที่ตรงกับ Seed Data ไปก่อน แล้วจะโหลดจริงซ้ำ
-      // อีกครั้งหลังยืนยันตัวตนสำเร็จ (ดูใน onConsentContinue)
-      jobTypesList = JOB_TYPES_FALLBACK.map((jt, idx) => ({ id: null, ...jt, sort_order: idx }));
-      renderJobTypeOptions();
-    } catch {
-      jobTypesList = JOB_TYPES_FALLBACK.map((jt, idx) => ({ id: null, ...jt, sort_order: idx }));
-      renderJobTypeOptions();
-    }
+    jobTypesList = JOB_TYPES_FALLBACK.map((jt, idx) => ({ id: null, ...jt, sort_order: idx }));
+    renderJobTypeOptions();
   }
 
   function renderJobTypeOptions() {
@@ -467,7 +432,7 @@
         renderJobTypeOptions();
       }
     } catch {
-      // ใช้รายการสำรองต่อไปหากโหลดไม่สำเร็จ (ไม่ Block การใช้งาน)
+      // ใช้รายการสำรองต่อไปหากโหลดไม่สำเร็จ
     }
   }
 
@@ -511,16 +476,15 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Consent -> Identify
+  // Consent -> Identify (ปรับให้ง่าย: ติ๊กเดียวครอบคลุมทั้ง 3 ประเภท Consent
+  // ที่ต้องบันทึกลง consent_logs ตามข้อกำหนด PDPA เบื้องหลัง)
   // ---------------------------------------------------------------------------
   document.getElementById("btn-consent-continue").addEventListener("click", preventDoubleSubmit(async (e) => {
     const btn = e.target;
-    const consentLine = document.getElementById("consent-line-profile").checked;
-    const consentPhoto = document.getElementById("consent-photo-storage").checked;
-    const consentData = document.getElementById("consent-data-processing").checked;
+    const consentAll = document.getElementById("consent-all-checkbox").checked;
 
-    if (!consentLine || !consentPhoto || !consentData) {
-      showToast("กรุณายินยอมให้ครบทุกข้อก่อนดำเนินการต่อ", "error");
+    if (!consentAll) {
+      showToast("กรุณายินยอมก่อนดำเนินการต่อ", "error");
       return;
     }
 
@@ -531,9 +495,9 @@
         idToken: lineIdentityContext.idToken,
         mockCustomer: lineIdentityContext.mockCustomer,
         consent: {
-          line_profile: consentLine,
-          photo_storage: consentPhoto,
-          data_processing: consentData,
+          line_profile: true,
+          photo_storage: true,
+          data_processing: true,
         },
       });
 
@@ -580,7 +544,7 @@
   });
 
   // ---------------------------------------------------------------------------
-  // Photo Upload UI (Preview Only — อัปโหลดจริงหลังสร้างงานสำเร็จ)
+  // Photo Upload UI
   // ---------------------------------------------------------------------------
   document.getElementById("btn-add-photo").addEventListener("click", () => {
     if (selectedPhotoFiles.length >= MAX_JOB_PHOTOS) {
@@ -779,11 +743,18 @@
   }));
 
   // ---------------------------------------------------------------------------
-  // Close Button
+  // Close Button (ทำงานสมบูรณ์เฉพาะเปิดผ่านแอป LINE จริงบนมือถือ — ถ้าเปิดผ่าน
+  // Browser ปกติ (ทดสอบบนคอมพิวเตอร์) จะแสดงข้อความแทนเพราะ LIFF ไม่อนุญาตให้
+  // ปิดหน้าต่าง Browser ทั่วไปได้)
   // ---------------------------------------------------------------------------
   document.getElementById("btn-close-liff").addEventListener("click", () => {
+    const wasInClient = !!(window.liff && window.liff.isInClient && window.liff.isInClient());
     closeLiffWindow();
-    showToast("ขอบคุณที่ใช้บริการ", "success");
+    if (wasInClient) {
+      showToast("ขอบคุณที่ใช้บริการ", "success");
+    } else {
+      showToast("ขอบคุณที่ใช้บริการ ท่านสามารถปิดแท็บนี้ได้เลย", "success");
+    }
   });
 
   // ---------------------------------------------------------------------------
