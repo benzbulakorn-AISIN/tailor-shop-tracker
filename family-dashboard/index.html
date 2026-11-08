@@ -336,7 +336,7 @@
   }
   .quick-percent-row .btn { margin-bottom: 0; padding: 12px; font-size: 0.95rem; }
 
-  /* ---------------- Status Stepper ---------------- */
+  /* ---------------- Status Stepper (3 ขั้นหลัก) ---------------- */
   .status-stepper {
     display: flex;
     justify-content: space-between;
@@ -345,12 +345,12 @@
   .stepper-item {
     flex: 1;
     text-align: center;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
   }
   .stepper-item.active { color: var(--primary); font-weight: 800; }
   .stepper-item.done { color: var(--success); }
-  .stepper-icon { font-size: 1.3rem; margin-bottom: 2px; }
+  .stepper-icon { font-size: 1.4rem; margin-bottom: 2px; }
   .stepper-cancelled-box {
     background: #fdecea;
     border: 1px solid var(--danger);
@@ -471,6 +471,27 @@
     font-size: 0.85rem;
     margin-top: 10px;
   }
+  .evidence-preview-thumb {
+    position: relative;
+    width: 90px;
+    height: 90px;
+    display: inline-block;
+    margin-top: 8px;
+  }
+  .evidence-preview-thumb img {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 10px;
+  }
+  .evidence-preview-thumb .remove-btn {
+    position: absolute;
+    top: -6px; right: -6px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 24px; height: 24px;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
   .balance-box {
     background: #e8f0fe;
     border-radius: 12px;
@@ -561,11 +582,10 @@
         <div class="filter-row">
           <select id="filter-status">
             <option value="">สถานะ: ทั้งหมด</option>
-            <option value="pending_confirmation">รอยืนยันนัด</option>
-            <option value="waiting">รอทำ</option>
-            <option value="in_progress">กำลังทำ</option>
+            <option value="pending_confirmation">รับเข้าระบบ (รอยืนยัน)</option>
+            <option value="waiting">รับเข้าระบบ (รอทำ/กำลังทำ)</option>
             <option value="completed">เสร็จแล้ว</option>
-            <option value="picked_up">ลูกค้ารับแล้ว</option>
+            <option value="picked_up">รับแล้ว</option>
             <option value="cancelled">ยกเลิก</option>
           </select>
           <select id="filter-job-type">

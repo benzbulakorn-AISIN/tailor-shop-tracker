@@ -1,16 +1,16 @@
 // family-dashboard/dashboard.js
-// Logic หลักของ Family Dashboard (Phase 5-7 รวมกัน + ปรับปรุงความง่ายในการใช้งาน)
+// Logic หลักของ Family Dashboard — เวอร์ชันปรับปรุงเพื่อความง่ายในการใช้งาน
 //
-// สรุปการปรับปรุงรอบนี้:
-// 1) ชื่อหน้า Login จัดเป็น 2 บรรทัดแบบตั้งใจ (ไม่ใช่ตกบรรทัดมั่วๆ)
-// 2) รวมส่วน "ราคา" + "หมายเหตุภายใน" เป็นปุ่มเดียว "บันทึกข้อมูลงาน"
-//    (ส่วนรับเงิน/ยืนยันนัด ยังคงแยกปุ่ม เพราะเป็นธุรกรรม/การแจ้งเตือนที่สำคัญ)
-// 3) จำกัดปุ่ม "เก็บถาวรงาน" ให้เห็นเฉพาะ Role "admin" เท่านั้น (ซ่อนจาก Owner)
-//    ⚠️ เป็นการซ่อนที่ชั้น UI เท่านั้น ไม่ได้เปลี่ยนสิทธิ์ที่ Edge Function/ฐานข้อมูล
-// 4) ลดขั้นตอนเปลี่ยนสถานะ: ปุ่มเดินหน้า (waiting->in_progress->completed->picked_up)
-//    กดครั้งเดียวจบไม่ต้องยืนยันซ้ำ ส่วนยกเลิกงาน/ย้อนกลับยังคงมี Confirm Dialog
-//    เพิ่มแถบแสดงขั้นตอนเป็นภาพ (Stepper) ให้เห็นภาพรวมได้ทันที
-// 5) เพิ่มปุ่มลัด: โทรหาลูกค้าจากหน้ารายการ, ชำระยอดคงเหลือทั้งหมด (เติมเลขให้อัตโนมัติ)
+// สรุปการปรับปรุงรอบนี้ (ต่อจากรอบก่อนหน้า):
+// 1) เพิ่มปุ่มถ่ายรูปสำหรับแนบหลักฐานการชำระเงิน (capture="environment" เหมือน
+//    หน้าลูกค้า) พร้อม Preview แบบ Thumbnail + ปุ่มลบ
+// 2) รวม "ยืนยันนัด" + "บันทึกรับเงิน (มัดจำ)" เป็นปุ่มเดียว "✅ ยืนยันรับงาน"
+//    เฉพาะตอนยืนยันงานใหม่ครั้งแรก (สถานะ pending_confirmation) เพราะเป็นจุดที่
+//    ใช้บ่อยและสับสนที่สุด ส่วนการรับเงินเพิ่มเติมภายหลังยังคงแยกปุ่มเหมือนเดิม
+// 3) แสดงสถานะงานแบบง่าย 3 ระดับ: "รับเข้าระบบ" → "เสร็จแล้ว" → "รับแล้ว"
+//    (ไม่แก้ฐานข้อมูล ยังเก็บ 5 สถานะเดิมเบื้องหลัง: pending_confirmation/
+//    waiting/in_progress ถูก "รวมป้าย" แสดงเป็น "รับเข้าระบบ" เดียวกัน
+//    ปุ่ม "งานเสร็จแล้ว" จะไล่เปลี่ยนสถานะเบื้องหลังให้ครบอัตโนมัติในคลิกเดียว)
 
 import { listLoginIdentities } from "../shared/auth-client.js";
 import {
@@ -20,7 +20,6 @@ import {
   showToast, preventDoubleSubmit, isValidPinFormat,
   formatThaiDate, formatThaiDateTime, getTodayBangkokISODate,
   generateIdempotencyKey, validateImageFile,
-  JOB_STATUS_DISPLAY, PAYMENT_STATUS_DISPLAY,
 } from "../shared/utils.js";
 import {
   fetchJobsWindow, fetchJobImages, fetchJobIdsWithFailedNotifications, attachFailedNotificationFlag,
@@ -35,6 +34,36 @@ import { retryNotification } from "../shared/notification-client.js";
 import { computeDashboardCards, filterJobs, buildCalendarMonthGrid, groupJobsByConfirmedDate } from "../shared/job-aggregation.js";
 import { PICKUP_TIME_SLOTS, JOB_TYPES_FALLBACK } from "../shared/job-constants.js";
 import { getSupabaseClient } from "../shared/supabase-client.js";
+
+// ============================================================================
+// Simplified Status Display (3 ระดับหลัก + ยกเลิก)
+// ============================================================================
+// สถานะจริงในฐานข้อมูลยังมีครบ 6 ค่าเหมือนเดิม (ไม่แก้ Schema) แต่รวมป้ายแสดงผล
+// ของ pending_confirmation / waiting / in_progress ให้เป็น "รับเข้าระบบ" เดียวกัน
+function getSimplifiedStatusKey(status) {
+  if (status === "completed") return "completed";
+  if (status === "picked_up") return "picked_up";
+  if (status === "cancelled") return "cancelled";
+  return "received"; // pending_confirmation, waiting, in_progress
+}
+
+const SIMPLIFIED_STATUS_DISPLAY = {
+  received: { label: "รับเข้าระบบ", icon: "📋", color: "#1a73e8" },
+  completed: { label: "เสร็จแล้ว", icon: "✅", color: "#1e8e3e" },
+  picked_up: { label: "รับแล้ว", icon: "📦", color: "#5f6368" },
+  cancelled: { label: "ยกเลิก", icon: "🚫", color: "#d93025" },
+};
+
+function getStatusDisplay(status) {
+  return SIMPLIFIED_STATUS_DISPLAY[getSimplifiedStatusKey(status)];
+}
+
+const PAYMENT_STATUS_DISPLAY = {
+  unpaid: { label: "ยังไม่ชำระ", icon: "⭕", color: "#d93025" },
+  deposit_paid: { label: "ชำระมัดจำแล้ว", icon: "🔸", color: "#f9a825" },
+  paid: { label: "ชำระครบแล้ว", icon: "✅", color: "#1e8e3e" },
+  refunded: { label: "คืนเงินแล้ว", icon: "↩️", color: "#5f6368" },
+};
 
 // ============================================================================
 // Identity Display Config (ลำดับ + ชื่อจริงในวงเล็บ)
@@ -254,7 +283,7 @@ document.getElementById("btn-refresh").addEventListener("click", preventDoubleSu
 }));
 
 // ============================================================================
-// Summary Cards (Auto-scroll ไปที่รายการงานเมื่อกด Card)
+// Summary Cards
 // ============================================================================
 const CARD_DEFINITIONS = [
   { key: "pendingConfirmation", label: "งานใหม่รอยืนยัน", icon: "🆕" },
@@ -411,7 +440,7 @@ document.getElementById("btn-cal-next").addEventListener("click", () => {
 });
 
 // ============================================================================
-// Job List (เพิ่มปุ่มโทรด่วน)
+// Job List
 // ============================================================================
 function renderJobList() {
   let jobs = getCardFilteredJobs();
@@ -434,7 +463,7 @@ function renderJobList() {
   emptyEl.classList.add("hidden");
 
   jobs.forEach((job) => {
-    const statusInfo = JOB_STATUS_DISPLAY[job.status] ?? { label: job.status, icon: "❔", color: "#999" };
+    const statusInfo = getStatusDisplay(job.status);
     const card = document.createElement("div");
     card.className = "job-card";
     card.innerHTML = `
@@ -507,22 +536,21 @@ function showConfirmDialog({ text, requireReason = false, confirmLabel = "ยื
 }
 
 // ============================================================================
-// Status Stepper (ภาพรวมขั้นตอนงาน)
+// Status Stepper (3 ขั้นหลัก: รับเข้าระบบ → เสร็จแล้ว → รับแล้ว)
 // ============================================================================
-const STEPPER_SEQUENCE = ["pending_confirmation", "waiting", "in_progress", "completed", "picked_up"];
+const STEPPER_SEQUENCE = ["received", "completed", "picked_up"];
 const STEPPER_LABELS = {
-  pending_confirmation: "รอยืนยัน",
-  waiting: "รอทำ",
-  in_progress: "กำลังทำ",
+  received: "รับเข้าระบบ",
   completed: "เสร็จแล้ว",
   picked_up: "รับแล้ว",
 };
 
 function buildStepperHtml(status) {
-  if (status === "cancelled") {
+  const simplified = getSimplifiedStatusKey(status);
+  if (simplified === "cancelled") {
     return `<div class="stepper-cancelled-box">🚫 งานนี้ถูกยกเลิกแล้ว</div>`;
   }
-  const currentIndex = STEPPER_SEQUENCE.indexOf(status);
+  const currentIndex = STEPPER_SEQUENCE.indexOf(simplified);
   return `
     <div class="status-stepper">
       ${STEPPER_SEQUENCE.map((s, idx) => {
@@ -541,12 +569,6 @@ function buildStepperHtml(status) {
 // ============================================================================
 // Job Detail Modal
 // ============================================================================
-const STATUS_NEXT_STEP = {
-  waiting: { to: "in_progress", label: "▶️ เริ่มทำงาน", cls: "btn-purple" },
-  in_progress: { to: "completed", label: "✅ งานเสร็จแล้ว", cls: "btn-success" },
-  completed: { to: "picked_up", label: "📦 ลูกค้ารับแล้ว", cls: "btn-success" },
-};
-
 const PAYMENT_METHOD_LABELS = { cash: "เงินสด", transfer: "โอนเงิน", qr: "QR Payment", other: "อื่น ๆ" };
 
 const NOTIFICATION_STATUS_LABELS = {
@@ -572,7 +594,7 @@ async function openJobModal(jobId) {
   const token = getAccessToken();
   const session = getSessionSnapshot();
   const isOwnerOrAdmin = session.appRole === "owner" || session.appRole === "admin";
-  const isAdminOnly = session.appRole === "admin"; // ข้อ 3: เก็บถาวรเฉพาะ Admin
+  const isAdminOnly = session.appRole === "admin"; // เก็บถาวรเฉพาะ Admin
 
   const sheet = document.getElementById("job-modal-sheet");
   sheet.innerHTML = `<div class="center-screen"><div class="spinner"></div><p>กำลังโหลด...</p></div>`;
@@ -593,11 +615,12 @@ async function openJobModal(jobId) {
     customerNotifications = [];
   }
 
-  const statusInfo = JOB_STATUS_DISPLAY[job.status] ?? { label: job.status, icon: "❔", color: "#999" };
+  const statusInfo = getStatusDisplay(job.status);
   const paymentInfo = PAYMENT_STATUS_DISPLAY[job.payment_status] ?? { label: job.payment_status, icon: "", color: "#999" };
   const quantityText = job.quantity_is_over_ten ? (job.quantity_note ?? "มากกว่า 10 ชิ้น") : `${job.quantity} ชิ้น`;
   const totalPaid = computeTotalPaid(paymentTransactions);
   const balance = job.price_final != null ? job.price_final - totalPaid : null;
+  const isPendingConfirmation = job.status === "pending_confirmation";
 
   sheet.innerHTML = `
     <button class="modal-close-btn" id="modal-close-btn">✕</button>
@@ -634,9 +657,10 @@ async function openJobModal(jobId) {
 
     <div class="modal-section" id="job-info-section"></div>
 
-    <div class="modal-section" id="payment-section"></div>
-
+    <!-- ถ้ายังไม่ยืนยันนัดครั้งแรก: รวมยืนยันนัด+มัดจำในส่วนเดียว (appointment-section)
+         และซ่อนส่วนรับเงินแยกต่างหากไปก่อน (ซ่อน payment-section ปกติ) -->
     <div class="modal-section" id="appointment-section"></div>
+    <div class="modal-section" id="payment-section"></div>
 
     <div class="modal-section" id="notification-history-section"></div>
 
@@ -655,8 +679,8 @@ async function openJobModal(jobId) {
   document.getElementById("modal-close-btn").addEventListener("click", closeJobModal);
 
   renderJobInfoSection(job, isOwnerOrAdmin);
-  renderPaymentSection(job, paymentTransactions, totalPaid, balance, paymentInfo, isOwnerOrAdmin);
-  renderAppointmentSection(job, isOwnerOrAdmin);
+  renderAppointmentSection(job, isOwnerOrAdmin, isPendingConfirmation);
+  renderPaymentSection(job, paymentTransactions, totalPaid, balance, paymentInfo, isOwnerOrAdmin, isPendingConfirmation);
   renderNotificationHistorySection(customerNotifications, isOwnerOrAdmin, job.id);
   renderStatusButtons(job);
 
@@ -738,7 +762,7 @@ function renderNotificationHistorySection(notifications, isOwnerOrAdmin, jobId) 
 }
 
 // ============================================================================
-// Job Info Section (ข้อ 2: รวมราคา + หมายเหตุ เป็นปุ่มเดียว)
+// Job Info Section (ราคา + หมายเหตุ รวมปุ่มเดียว)
 // ============================================================================
 function renderJobInfoSection(job, isOwnerOrAdmin) {
   const section = document.getElementById("job-info-section");
@@ -832,12 +856,212 @@ function renderJobInfoSection(job, isOwnerOrAdmin) {
 }
 
 // ============================================================================
-// Payment Section (เพิ่มปุ่มเติมยอดคงเหลืออัตโนมัติ)
+// Appointment Section
+// - ถ้าเป็นงานใหม่ (pending_confirmation): รวมฟอร์มยืนยันนัด + มัดจำ เป็นปุ่มเดียว
+// - ถ้าเป็นการเปลี่ยนนัดภายหลัง: แยกฟอร์มเหมือนเดิม (ต้องระบุเหตุผล)
+// ============================================================================
+let pendingEvidenceFileForConfirm = null;
+
+function renderAppointmentSection(job, isOwnerOrAdmin, isPendingConfirmation) {
+  const section = document.getElementById("appointment-section");
+
+  if (!isOwnerOrAdmin) {
+    section.innerHTML = isPendingConfirmation
+      ? `<div class="warning-box">⏳ งานนี้รอการยืนยันนัดจากเจ้าของร้านหรือผู้ดูแลระบบ</div>`
+      : "";
+    return;
+  }
+
+  if (isPendingConfirmation) {
+    // ---------------- งานใหม่: รวมยืนยันนัด + มัดจำ เป็นปุ่มเดียว ----------------
+    section.innerHTML = `
+      <h3>✅ ยืนยันรับงาน</h3>
+      <label style="font-weight:600;">วันที่ร้านยืนยัน</label>
+      <input type="date" class="confirm-date-input" id="confirm-date-input" value="${job.requested_pickup_date}" />
+      <label style="font-weight:600;">เวลาที่ร้านยืนยัน</label>
+      <select class="confirm-time-select" id="confirm-time-select">
+        ${PICKUP_TIME_SLOTS.map((t) => `<option value="${t}" ${t === job.requested_pickup_time_slot ? "selected" : ""}>${t} น.</option>`).join("")}
+      </select>
+      <label style="font-weight:600;">รับเงินมัดจำตอนนี้ (บาท) — เว้นว่างได้ถ้ายังไม่รับ</label>
+      <input type="number" min="0" step="0.01" class="payment-amount-input" id="combined-deposit-amount-input" placeholder="เว้นว่างถ้ายังไม่รับเงินมัดจำ" />
+      <select class="payment-method-select" id="combined-deposit-method-select">
+        <option value="cash">เงินสด</option>
+        <option value="transfer">โอนเงิน</option>
+        <option value="qr">QR Payment</option>
+        <option value="other">อื่น ๆ</option>
+      </select>
+      <div class="upload-evidence-btn" id="btn-pick-confirm-evidence">📷 ถ่ายรูปหลักฐานการชำระเงิน (ถ้ามี)</div>
+      <input type="file" id="confirm-evidence-input" accept="image/jpeg,image/png,image/webp" capture="environment" class="hidden" />
+      <div id="confirm-evidence-preview"></div>
+      <button class="btn btn-primary btn-big-step" id="btn-confirm-and-pay" style="margin-top:12px;">✅ ยืนยันรับงาน</button>
+    `;
+
+    pendingEvidenceFileForConfirm = null;
+    const evidenceInput = document.getElementById("confirm-evidence-input");
+    const evidencePreview = document.getElementById("confirm-evidence-preview");
+    document.getElementById("btn-pick-confirm-evidence").addEventListener("click", () => evidenceInput.click());
+    evidenceInput.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const validation = validateImageFile(file);
+      if (!validation.valid) {
+        showToast(validation.message, "error");
+        e.target.value = "";
+        return;
+      }
+      pendingEvidenceFileForConfirm = file;
+      renderEvidenceThumb(evidencePreview, file, () => {
+        pendingEvidenceFileForConfirm = null;
+        evidencePreview.innerHTML = "";
+        evidenceInput.value = "";
+      });
+    });
+
+    document.getElementById("btn-confirm-and-pay").addEventListener("click", preventDoubleSubmit(async () => {
+      const confirmedDate = document.getElementById("confirm-date-input").value;
+      const confirmedTime = document.getElementById("confirm-time-select").value;
+      const depositAmountInput = document.getElementById("combined-deposit-amount-input").value;
+      const depositMethod = document.getElementById("combined-deposit-method-select").value;
+
+      if (!confirmedDate || !confirmedTime) {
+        showToast("กรุณาเลือกวันและเวลาให้ครบถ้วน", "error");
+        return;
+      }
+
+      const depositAmount = depositAmountInput === "" ? 0 : Number(depositAmountInput);
+      if (depositAmountInput !== "" && (Number.isNaN(depositAmount) || depositAmount <= 0)) {
+        showToast("จำนวนเงินมัดจำไม่ถูกต้อง", "error");
+        return;
+      }
+
+      try {
+        await confirmAppointment({
+          accessToken: getAccessToken(),
+          jobId: job.id,
+          confirmedDate,
+          confirmedTime,
+          changeReason: null,
+        });
+
+        if (depositAmount > 0) {
+          const session = getSessionSnapshot();
+          const result = await recordPayment({
+            accessToken: getAccessToken(),
+            jobId: job.id,
+            transactionType: "payment",
+            amount: depositAmount,
+            paymentMethod: depositMethod,
+            note: "เงินมัดจำตอนยืนยันรับงาน",
+            idempotencyKey: generateIdempotencyKey("pay"),
+          });
+          if (pendingEvidenceFileForConfirm) {
+            try {
+              await uploadPaymentEvidence({
+                transactionId: result.transaction_id,
+                file: pendingEvidenceFileForConfirm,
+                accessToken: getAccessToken(),
+                uploadedByShopUserId: session.shopUserId,
+              });
+            } catch {
+              // ไม่ขัดจังหวะ Flow หลัก หากแนบหลักฐานไม่สำเร็จ
+            }
+          }
+        }
+
+        showToast("ยืนยันรับงานสำเร็จ", "success");
+        await refreshJobs();
+        closeJobModal();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }));
+    return;
+  }
+
+  // ---------------- เปลี่ยนวันนัดภายหลัง (ต้องระบุเหตุผล) ----------------
+  if (job.confirmed_pickup_date) {
+    section.innerHTML = `
+      <h3>📅 เปลี่ยนวันนัดรับ</h3>
+      <label style="font-weight:600;">วันที่ร้านยืนยัน</label>
+      <input type="date" class="confirm-date-input" id="confirm-date-input" value="${job.confirmed_pickup_date}" />
+      <label style="font-weight:600;">เวลาที่ร้านยืนยัน</label>
+      <select class="confirm-time-select" id="confirm-time-select">
+        ${PICKUP_TIME_SLOTS.map((t) => `<option value="${t}" ${t === job.confirmed_pickup_time ? "selected" : ""}>${t} น.</option>`).join("")}
+      </select>
+      <label style="font-weight:600;">เหตุผลที่เปลี่ยนวันนัด</label>
+      <textarea class="note-input" id="reschedule-reason-input" placeholder="ระบุเหตุผล..." style="min-height:60px;"></textarea>
+      <button class="btn btn-primary" id="btn-confirm-appointment" style="margin-top:10px;">บันทึกวันนัดใหม่</button>
+    `;
+
+    document.getElementById("btn-confirm-appointment").addEventListener("click", preventDoubleSubmit(async () => {
+      const confirmedDate = document.getElementById("confirm-date-input").value;
+      const confirmedTime = document.getElementById("confirm-time-select").value;
+      const changeReason = document.getElementById("reschedule-reason-input").value.trim();
+
+      if (!confirmedDate || !confirmedTime) {
+        showToast("กรุณาเลือกวันและเวลาให้ครบถ้วน", "error");
+        return;
+      }
+      if (!changeReason) {
+        showToast("กรุณาระบุเหตุผลที่เปลี่ยนวันนัด", "error");
+        return;
+      }
+
+      try {
+        await confirmAppointment({
+          accessToken: getAccessToken(),
+          jobId: job.id,
+          confirmedDate,
+          confirmedTime,
+          changeReason,
+        });
+        showToast("เปลี่ยนวันนัดสำเร็จ", "success");
+        await refreshJobs();
+        closeJobModal();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }));
+    return;
+  }
+
+  section.innerHTML = "";
+}
+
+function renderEvidenceThumb(containerEl, file, onRemove) {
+  containerEl.innerHTML = "";
+  const thumb = document.createElement("div");
+  thumb.className = "evidence-preview-thumb";
+  const img = document.createElement("img");
+  img.src = URL.createObjectURL(file);
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "remove-btn";
+  removeBtn.textContent = "✕";
+  removeBtn.addEventListener("click", onRemove);
+  thumb.appendChild(img);
+  thumb.appendChild(removeBtn);
+  containerEl.appendChild(thumb);
+}
+
+// ============================================================================
+// Payment Section
+// - ซ่อนตัวเองถ้าเป็นงานใหม่ที่ยังไม่ยืนยัน (เพราะรวมอยู่ใน Appointment Section แล้ว)
+// - เพิ่มปุ่มถ่ายรูปหลักฐาน (capture=environment) + Preview Thumbnail แบบลบได้
 // ============================================================================
 let pendingEvidenceFile = null;
 
-function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo, isOwnerOrAdmin) {
+function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo, isOwnerOrAdmin, isPendingConfirmation) {
   const section = document.getElementById("payment-section");
+
+  if (isPendingConfirmation && isOwnerOrAdmin) {
+    // ซ่อนไว้ก่อน เพราะการรับเงินมัดจำครั้งแรกถูกรวมเข้าไปในปุ่ม "ยืนยันรับงาน" แล้ว
+    section.innerHTML = transactions.length > 0
+      ? `<h3>💳 ประวัติการชำระเงิน</h3>${transactions.map(renderPaymentTxCardHtml(isOwnerOrAdmin)).join("")}`
+      : "";
+    if (transactions.length > 0) bindVoidButtons(section, job, isOwnerOrAdmin);
+    return;
+  }
 
   const balanceHtml = job.price_final != null
     ? `<div class="balance-box">
@@ -848,23 +1072,7 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
 
   const transactionsHtml = transactions.length === 0
     ? `<div class="readonly-note">ยังไม่มีประวัติการชำระเงิน</div>`
-    : transactions.map((tx) => `
-        <div class="payment-tx-card ${tx.is_voided ? "voided" : ""}">
-          <div class="payment-tx-top">
-            <span class="payment-tx-amount ${tx.transaction_type}">${tx.transaction_type === "refund" ? "-" : "+"}${tx.amount.toLocaleString()} บาท</span>
-            ${tx.is_voided ? '<span class="voided-tag">ยกเลิกแล้ว</span>' : (isOwnerOrAdmin ? `<button class="btn btn-secondary btn-sm" data-void-tx-id="${tx.id}">ยกเลิกรายการ</button>` : "")}
-          </div>
-          <div class="payment-tx-meta">
-            ${PAYMENT_METHOD_LABELS[tx.payment_method] ?? tx.payment_method} • ${formatThaiDateTime(tx.received_at)} • โดย ${tx.shop_users?.full_name ?? "-"}
-            ${tx.note ? `<br/>หมายเหตุ: ${tx.note}` : ""}
-            ${tx.is_voided ? `<br/>เหตุผลยกเลิก: ${tx.void_reason ?? "-"} (โดย ${tx.voider?.full_name ?? "-"})` : ""}
-          </div>
-          ${tx.payment_evidence.length > 0 ? `
-          <div class="payment-tx-evidence">
-            ${tx.payment_evidence.map((ev) => `<img src="${ev.signedUrl ?? ""}" alt="หลักฐาน" />`).join("")}
-          </div>` : ""}
-        </div>
-      `).join("");
+    : transactions.map(renderPaymentTxCardHtml(isOwnerOrAdmin)).join("");
 
   const hasRemainingBalance = job.price_final != null && balance > 0;
 
@@ -885,9 +1093,9 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
         <option value="other">อื่น ๆ</option>
       </select>
       <textarea class="note-input" id="payment-note-input" placeholder="หมายเหตุ (ถ้ามี)" style="min-height:60px;"></textarea>
-      <div class="upload-evidence-btn" id="btn-pick-evidence">📷 แนบรูปหลักฐานการชำระเงิน (ถ้ามี)</div>
-      <input type="file" id="payment-evidence-input" accept="image/jpeg,image/png,image/webp" class="hidden" />
-      <div id="evidence-preview" style="margin-top:8px;"></div>
+      <div class="upload-evidence-btn" id="btn-pick-evidence">📷 ถ่ายรูปหลักฐานการชำระเงิน (ถ้ามี)</div>
+      <input type="file" id="payment-evidence-input" accept="image/jpeg,image/png,image/webp" capture="environment" class="hidden" />
+      <div id="evidence-preview"></div>
       <button class="btn btn-success" id="btn-record-payment" style="margin-top:10px;">บันทึกรับเงิน</button>
     </div>
   `;
@@ -898,27 +1106,7 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     });
   }
 
-  if (isOwnerOrAdmin) {
-    section.querySelectorAll("[data-void-tx-id]").forEach((btn) => {
-      btn.addEventListener("click", preventDoubleSubmit(async () => {
-        const txId = btn.getAttribute("data-void-tx-id");
-        const result = await showConfirmDialog({
-          text: "ต้องการยกเลิกรายการนี้ใช่หรือไม่? (ระบบจะไม่ลบประวัติ แต่จะทำเครื่องหมายว่ายกเลิกแล้ว)",
-          requireReason: true,
-          confirmLabel: "ยกเลิกรายการ",
-        });
-        if (!result.confirmed) return;
-        try {
-          await voidPayment({ accessToken: getAccessToken(), transactionId: txId, voidReason: result.reason });
-          showToast("ยกเลิกรายการสำเร็จ", "success");
-          await refreshJobs();
-          openJobModal(job.id);
-        } catch (err) {
-          showToast(err.message, "error");
-        }
-      }));
-    });
-  }
+  bindVoidButtons(section, job, isOwnerOrAdmin);
 
   pendingEvidenceFile = null;
   const evidenceInput = document.getElementById("payment-evidence-input");
@@ -934,7 +1122,11 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
       return;
     }
     pendingEvidenceFile = file;
-    evidencePreview.innerHTML = `<img src="${URL.createObjectURL(file)}" style="width:80px;height:80px;object-fit:cover;border-radius:10px;" />`;
+    renderEvidenceThumb(evidencePreview, file, () => {
+      pendingEvidenceFile = null;
+      evidencePreview.innerHTML = "";
+      evidenceInput.value = "";
+    });
   });
 
   document.getElementById("btn-record-payment").addEventListener("click", preventDoubleSubmit(async () => {
@@ -983,97 +1175,69 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
   }));
 }
 
-function renderAppointmentSection(job, isOwnerOrAdmin) {
-  const section = document.getElementById("appointment-section");
-  if (job.status !== "pending_confirmation" && !isOwnerOrAdmin) {
-    section.innerHTML = "";
-    return;
-  }
-
-  if (!isOwnerOrAdmin) {
-    section.innerHTML = job.status === "pending_confirmation"
-      ? `<div class="warning-box">⏳ งานนี้รอการยืนยันนัดจากเจ้าของร้านหรือผู้ดูแลระบบ</div>`
-      : "";
-    return;
-  }
-
-  const isReschedule = !!job.confirmed_pickup_date;
-  section.innerHTML = `
-    <h3>📅 ${isReschedule ? "เปลี่ยนวันนัดรับ" : "ยืนยันวันนัดรับ"}</h3>
-    <label style="font-weight:600;">วันที่ร้านยืนยัน</label>
-    <input type="date" class="confirm-date-input" id="confirm-date-input" value="${job.confirmed_pickup_date ?? job.requested_pickup_date}" />
-    <label style="font-weight:600;">เวลาที่ร้านยืนยัน</label>
-    <select class="confirm-time-select" id="confirm-time-select">
-      ${PICKUP_TIME_SLOTS.map((t) => `<option value="${t}" ${t === job.confirmed_pickup_time ? "selected" : ""}>${t} น.</option>`).join("")}
-    </select>
-    ${isReschedule ? `
-    <label style="font-weight:600;">เหตุผลที่เปลี่ยนวันนัด</label>
-    <textarea class="note-input" id="reschedule-reason-input" placeholder="ระบุเหตุผล..." style="min-height:60px;"></textarea>` : ""}
-    <button class="btn btn-primary" id="btn-confirm-appointment" style="margin-top:10px;">${isReschedule ? "บันทึกวันนัดใหม่" : "ยืนยันนัด"}</button>
+function renderPaymentTxCardHtml(isOwnerOrAdmin) {
+  return (tx) => `
+    <div class="payment-tx-card ${tx.is_voided ? "voided" : ""}">
+      <div class="payment-tx-top">
+        <span class="payment-tx-amount ${tx.transaction_type}">${tx.transaction_type === "refund" ? "-" : "+"}${tx.amount.toLocaleString()} บาท</span>
+        ${tx.is_voided ? '<span class="voided-tag">ยกเลิกแล้ว</span>' : (isOwnerOrAdmin ? `<button class="btn btn-secondary btn-sm" data-void-tx-id="${tx.id}">ยกเลิกรายการ</button>` : "")}
+      </div>
+      <div class="payment-tx-meta">
+        ${PAYMENT_METHOD_LABELS[tx.payment_method] ?? tx.payment_method} • ${formatThaiDateTime(tx.received_at)} • โดย ${tx.shop_users?.full_name ?? "-"}
+        ${tx.note ? `<br/>หมายเหตุ: ${tx.note}` : ""}
+        ${tx.is_voided ? `<br/>เหตุผลยกเลิก: ${tx.void_reason ?? "-"} (โดย ${tx.voider?.full_name ?? "-"})` : ""}
+      </div>
+      ${tx.payment_evidence.length > 0 ? `
+      <div class="payment-tx-evidence">
+        ${tx.payment_evidence.map((ev) => `<img src="${ev.signedUrl ?? ""}" alt="หลักฐาน" />`).join("")}
+      </div>` : ""}
+    </div>
   `;
+}
 
-  document.getElementById("btn-confirm-appointment").addEventListener("click", preventDoubleSubmit(async () => {
-    const confirmedDate = document.getElementById("confirm-date-input").value;
-    const confirmedTime = document.getElementById("confirm-time-select").value;
-    const reasonInput = document.getElementById("reschedule-reason-input");
-    const changeReason = reasonInput ? reasonInput.value.trim() : null;
-
-    if (!confirmedDate || !confirmedTime) {
-      showToast("กรุณาเลือกวันและเวลาให้ครบถ้วน", "error");
-      return;
-    }
-    if (isReschedule && !changeReason) {
-      showToast("กรุณาระบุเหตุผลที่เปลี่ยนวันนัด", "error");
-      return;
-    }
-
-    try {
-      await confirmAppointment({
-        accessToken: getAccessToken(),
-        jobId: job.id,
-        confirmedDate,
-        confirmedTime,
-        changeReason,
+function bindVoidButtons(section, job, isOwnerOrAdmin) {
+  if (!isOwnerOrAdmin) return;
+  section.querySelectorAll("[data-void-tx-id]").forEach((btn) => {
+    btn.addEventListener("click", preventDoubleSubmit(async () => {
+      const txId = btn.getAttribute("data-void-tx-id");
+      const result = await showConfirmDialog({
+        text: "ต้องการยกเลิกรายการนี้ใช่หรือไม่? (ระบบจะไม่ลบประวัติ แต่จะทำเครื่องหมายว่ายกเลิกแล้ว)",
+        requireReason: true,
+        confirmLabel: "ยกเลิกรายการ",
       });
-      showToast(isReschedule ? "เปลี่ยนวันนัดสำเร็จ" : "ยืนยันนัดสำเร็จ", "success");
-      await refreshJobs();
-      closeJobModal();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  }));
+      if (!result.confirmed) return;
+      try {
+        await voidPayment({ accessToken: getAccessToken(), transactionId: txId, voidReason: result.reason });
+        showToast("ยกเลิกรายการสำเร็จ", "success");
+        await refreshJobs();
+        openJobModal(job.id);
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }));
+  });
 }
 
 // ============================================================================
-// Status Buttons (ข้อ 5: ลดขั้นตอน — กดครั้งเดียวจบสำหรับเดินหน้า)
+// Status Buttons (กดครั้งเดียวจบ — ไล่สถานะเบื้องหลังอัตโนมัติให้ตรงกับ 3 ขั้นหลัก)
 // ============================================================================
 function renderStatusButtons(job) {
   const container = document.getElementById("status-buttons");
-  const nextStep = STATUS_NEXT_STEP[job.status];
-  const canCancel = job.status === "waiting" || job.status === "in_progress";
-  const canRevert = job.status === "completed";
+  const simplified = getSimplifiedStatusKey(job.status);
 
-  if (!nextStep && !canCancel && !canRevert) {
+  if (simplified === "cancelled" || simplified === "picked_up") {
     container.innerHTML = `<div class="readonly-note">ไม่มีการเปลี่ยนสถานะที่ทำได้ในขั้นตอนนี้</div>`;
     return;
   }
 
-  let html = "";
-  if (nextStep) {
-    html += `<button class="btn ${nextStep.cls} btn-big-step" id="btn-next-step">${nextStep.label}</button>`;
-  }
-  if (canRevert) {
-    html += `<button class="btn btn-secondary btn-sm" id="btn-revert-step" style="margin-top:6px;">↩️ ย้อนกลับไปกำลังทำ</button>`;
-  }
-  if (canCancel) {
-    html += `<button class="btn btn-secondary btn-sm" id="btn-cancel-step" style="margin-top:6px;color:var(--danger);border-color:var(--danger);">🚫 ยกเลิกงานนี้</button>`;
-  }
-  container.innerHTML = html;
-
-  if (nextStep) {
+  if (simplified === "completed") {
+    container.innerHTML = `
+      <button class="btn btn-success btn-big-step" id="btn-next-step">📦 ลูกค้ารับแล้ว</button>
+      <button class="btn btn-secondary btn-sm" id="btn-revert-step" style="margin-top:6px;">↩️ ย้อนกลับไปกำลังทำ</button>
+    `;
     document.getElementById("btn-next-step").addEventListener("click", preventDoubleSubmit(async () => {
       try {
-        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: nextStep.to, reason: null });
+        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "picked_up", reason: null });
         showToast("เปลี่ยนสถานะสำเร็จ", "success");
         await refreshJobs();
         closeJobModal();
@@ -1081,12 +1245,9 @@ function renderStatusButtons(job) {
         showToast(err.message, "error");
       }
     }));
-  }
-
-  if (canRevert) {
     document.getElementById("btn-revert-step").addEventListener("click", preventDoubleSubmit(async () => {
       const result = await showConfirmDialog({
-        text: "ต้องการย้อนกลับไปสถานะ \"กำลังทำ\" ใช่หรือไม่?",
+        text: "ต้องการย้อนกลับไปสถานะ \"รับเข้าระบบ (กำลังทำ)\" ใช่หรือไม่?",
         requireReason: false,
         confirmLabel: "ยืนยัน",
       });
@@ -1100,32 +1261,59 @@ function renderStatusButtons(job) {
         showToast(err.message, "error");
       }
     }));
+    return;
   }
 
-  if (canCancel) {
-    document.getElementById("btn-cancel-step").addEventListener("click", preventDoubleSubmit(async () => {
-      const result = await showConfirmDialog({
-        text: `ต้องการยกเลิกงาน ${job.job_number} ใช่หรือไม่?`,
-        requireReason: true,
-        confirmLabel: "ยกเลิกงาน",
-      });
-      if (!result.confirmed) return;
-      try {
-        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "cancelled", reason: result.reason });
-        showToast("เปลี่ยนสถานะสำเร็จ", "success");
-        await refreshJobs();
-        closeJobModal();
-      } catch (err) {
-        showToast(err.message, "error");
-      }
-    }));
+  // simplified === "received" (ครอบคลุม pending_confirmation / waiting / in_progress)
+  if (job.status === "pending_confirmation") {
+    container.innerHTML = `<div class="readonly-note">กรุณายืนยันรับงานในส่วนด้านบนก่อน จึงจะเปลี่ยนสถานะต่อได้</div>`;
+    return;
   }
+
+  container.innerHTML = `
+    <button class="btn btn-success btn-big-step" id="btn-next-step">✅ งานเสร็จแล้ว</button>
+    <button class="btn btn-secondary btn-sm" id="btn-cancel-step" style="margin-top:6px;color:var(--danger);border-color:var(--danger);">🚫 ยกเลิกงานนี้</button>
+  `;
+
+  document.getElementById("btn-next-step").addEventListener("click", preventDoubleSubmit(async () => {
+    try {
+      // ไล่สถานะเบื้องหลังให้ครบอัตโนมัติในคลิกเดียว (waiting ต้องผ่าน in_progress ก่อน
+      // ตามกฎที่ Edge Function change-job-status กำหนดไว้ ไม่ได้แก้กฎนี้)
+      if (job.status === "waiting") {
+        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "in_progress", reason: null });
+      }
+      await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "completed", reason: null });
+      showToast("เปลี่ยนสถานะสำเร็จ", "success");
+      await refreshJobs();
+      closeJobModal();
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  }));
+
+  document.getElementById("btn-cancel-step").addEventListener("click", preventDoubleSubmit(async () => {
+    const result = await showConfirmDialog({
+      text: `ต้องการยกเลิกงาน ${job.job_number} ใช่หรือไม่?`,
+      requireReason: true,
+      confirmLabel: "ยกเลิกงาน",
+    });
+    if (!result.confirmed) return;
+    try {
+      await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "cancelled", reason: result.reason });
+      showToast("เปลี่ยนสถานะสำเร็จ", "success");
+      await refreshJobs();
+      closeJobModal();
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  }));
 }
 
 function closeJobModal() {
   document.getElementById("job-modal-backdrop").classList.add("hidden");
   state.currentJobId = null;
   pendingEvidenceFile = null;
+  pendingEvidenceFileForConfirm = null;
 }
 document.getElementById("job-modal-backdrop").addEventListener("click", (e) => {
   if (e.target.id === "job-modal-backdrop") closeJobModal();
