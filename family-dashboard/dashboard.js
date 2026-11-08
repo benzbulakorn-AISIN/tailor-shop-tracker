@@ -1,5 +1,5 @@
 // family-dashboard/dashboard.js
-// Logic หลักของ Family Dashboard (Phase 5 + Phase 6: Pricing and Payments)
+// Logic หลักของ Family Dashboard (Phase 5 + Phase 6: Payments + Phase 7: LINE Notifications)
 
 import { listLoginIdentities } from "../shared/auth-client.js";
 import {
@@ -13,13 +13,14 @@ import {
 } from "../shared/utils.js";
 import {
   fetchJobsWindow, fetchJobImages, fetchJobIdsWithFailedNotifications, attachFailedNotificationFlag,
-  fetchJobPaymentTransactions, computeTotalPaid,
+  fetchJobPaymentTransactions, computeTotalPaid, fetchJobCustomerNotifications,
 } from "../shared/shop-data-client.js";
 import {
   confirmAppointment, changeJobStatus, assignJob, addJobNote, archiveJob,
 } from "../shared/shop-actions-client.js";
 import { setJobPricing, recordPayment, voidPayment } from "../shared/payment-client.js";
 import { uploadPaymentEvidence } from "../shared/payment-evidence-upload.js";
+import { retryNotification } from "../shared/notification-client.js";
 import { computeDashboardCards, filterJobs, buildCalendarMonthGrid, groupJobsByConfirmedDate } from "../shared/job-aggregation.js";
 import { PICKUP_TIME_SLOTS, JOB_TYPES_FALLBACK } from "../shared/job-constants.js";
 import { getSupabaseClient } from "../shared/supabase-client.js";
@@ -430,6 +431,7 @@ function renderJobList() {
         <span>👤 ${getShopUserName(job.assigned_to)}</span>
         ${job.confirmed_pickup_date ? `<span>📅 ${formatThaiDate(job.confirmed_pickup_date)} ${job.confirmed_pickup_time ?? ""} น.</span>` : `<span>📅 ต้องการ ${formatThaiDate(job.requested_pickup_date)}</span>`}
         ${job.is_urgent ? '<span class="urgent-tag">🚨 ด่วน</span>' : ""}
+        ${job._hasFailedNotification ? '<span class="urgent-tag" style="background:#fff3e0;color:#e65100;">📵 LINE ไม่สำเร็จ</span>' : ""}
       </div>
     `;
     card.addEventListener("click", () => openJobModal(job.id));
@@ -499,6 +501,21 @@ const STATUS_TRANSITIONS = {
 
 const PAYMENT_METHOD_LABELS = { cash: "เงินสด", transfer: "โอนเงิน", qr: "QR Payment", other: "อื่น ๆ" };
 
+const NOTIFICATION_STATUS_LABELS = {
+  pending: { label: "รอส่ง", icon: "⏳", color: "#f9a825" },
+  sent: { label: "ส่งสำเร็จ", icon: "✅", color: "#1e8e3e" },
+  failed: { label: "ส่งไม่สำเร็จ", icon: "📵", color: "#d93025" },
+};
+
+const NOTIFICATION_TYPE_LABELS = {
+  job_received: "รับคำขอฝากงาน",
+  appointment_confirmed: "ยืนยันนัด",
+  appointment_changed: "เปลี่ยนนัด",
+  status_update: "แจ้งสถานะ",
+  reminder: "แจ้งเตือน",
+  other: "อื่น ๆ",
+};
+
 async function openJobModal(jobId) {
   state.currentJobId = jobId;
   const job = state.allJobs.find((j) => j.id === jobId);
@@ -514,14 +531,17 @@ async function openJobModal(jobId) {
 
   let images = [];
   let paymentTransactions = [];
+  let customerNotifications = [];
   try {
-    [images, paymentTransactions] = await Promise.all([
+    [images, paymentTransactions, customerNotifications] = await Promise.all([
       fetchJobImages({ accessToken: token, jobId }),
       fetchJobPaymentTransactions({ accessToken: token, jobId }),
+      fetchJobCustomerNotifications({ accessToken: token, jobId }),
     ]);
   } catch {
     images = [];
     paymentTransactions = [];
+    customerNotifications = [];
   }
 
   const statusInfo = JOB_STATUS_DISPLAY[job.status] ?? { label: job.status, icon: "❔", color: "#999" };
@@ -567,6 +587,8 @@ async function openJobModal(jobId) {
 
     <div class="modal-section" id="appointment-section"></div>
 
+    <div class="modal-section" id="notification-history-section"></div>
+
     <div class="modal-section" id="status-section">
       <h3>🔄 เปลี่ยนสถานะ</h3>
       <div id="status-buttons"></div>
@@ -596,19 +618,12 @@ async function openJobModal(jobId) {
 
   document.getElementById("modal-close-btn").addEventListener("click", closeJobModal);
 
-  // ---------------- Pricing Section ----------------
   renderPricingSection(job, isOwnerOrAdmin);
-
-  // ---------------- Payment Section ----------------
   renderPaymentSection(job, paymentTransactions, totalPaid, balance, paymentInfo, isOwnerOrAdmin);
-
-  // ---------------- Appointment Section ----------------
   renderAppointmentSection(job, isOwnerOrAdmin);
-
-  // ---------------- Status Buttons ----------------
+  renderNotificationHistorySection(customerNotifications, isOwnerOrAdmin, job.id);
   renderStatusButtons(job);
 
-  // ---------------- Assign ----------------
   document.getElementById("btn-save-assign").addEventListener("click", preventDoubleSubmit(async () => {
     const selectEl = document.getElementById("assign-select");
     try {
@@ -621,7 +636,6 @@ async function openJobModal(jobId) {
     }
   }));
 
-  // ---------------- Note ----------------
   document.getElementById("btn-save-note").addEventListener("click", preventDoubleSubmit(async () => {
     const noteEl = document.getElementById("note-input");
     try {
@@ -633,7 +647,6 @@ async function openJobModal(jobId) {
     }
   }));
 
-  // ---------------- Archive (Owner/Admin) ----------------
   const archiveBtn = document.getElementById("btn-archive-job");
   if (archiveBtn) {
     archiveBtn.addEventListener("click", preventDoubleSubmit(async () => {
@@ -652,6 +665,62 @@ async function openJobModal(jobId) {
         showToast(err.message, "error");
       }
     }));
+  }
+}
+
+// ============================================================================
+// Notification History Section (Phase 7)
+// ============================================================================
+function renderNotificationHistorySection(notifications, isOwnerOrAdmin, jobId) {
+  const section = document.getElementById("notification-history-section");
+
+  if (notifications.length === 0) {
+    section.innerHTML = `
+      <h3>📨 ประวัติการแจ้งเตือน LINE</h3>
+      <div class="readonly-note">ยังไม่มีการแจ้งเตือนสำหรับงานนี้</div>
+    `;
+    return;
+  }
+
+  section.innerHTML = `
+    <h3>📨 ประวัติการแจ้งเตือน LINE</h3>
+    ${notifications.map((n) => {
+      const statusInfo = NOTIFICATION_STATUS_LABELS[n.status] ?? { label: n.status, icon: "❔", color: "#999" };
+      const typeLabel = NOTIFICATION_TYPE_LABELS[n.notification_type] ?? n.notification_type;
+      return `
+        <div class="payment-tx-card">
+          <div class="payment-tx-top">
+            <span>${typeLabel}</span>
+            <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span>
+          </div>
+          <div class="payment-tx-meta">
+            ${formatThaiDateTime(n.created_at)}
+            ${n.status === "failed" && n.error_message ? `<br/>สาเหตุ: ${n.error_message}` : ""}
+            ${n.retry_count > 0 ? `<br/>ลองส่งใหม่แล้ว ${n.retry_count} ครั้ง` : ""}
+          </div>
+          ${n.status === "failed" && isOwnerOrAdmin ? `<button class="btn btn-secondary btn-sm" data-retry-notif-id="${n.id}" style="margin-top:8px;">🔁 ลองส่งใหม่</button>` : ""}
+        </div>
+      `;
+    }).join("")}
+  `;
+
+  if (isOwnerOrAdmin) {
+    section.querySelectorAll("[data-retry-notif-id]").forEach((btn) => {
+      btn.addEventListener("click", preventDoubleSubmit(async () => {
+        const notifId = btn.getAttribute("data-retry-notif-id");
+        btn.disabled = true;
+        btn.textContent = "กำลังลองส่งใหม่...";
+        try {
+          await retryNotification({ accessToken: getAccessToken(), notificationId: notifId, notificationTable: "customer" });
+          showToast("ส่งข้อความสำเร็จ", "success");
+          openJobModal(jobId);
+        } catch (err) {
+          showToast(err.message, "error");
+          btn.disabled = false;
+          btn.textContent = "🔁 ลองส่งใหม่";
+        }
+      }));
+    });
   }
 }
 
@@ -711,7 +780,7 @@ function renderPricingSection(job, isOwnerOrAdmin) {
       });
       showToast("บันทึกราคาสำเร็จ", "success");
       await refreshJobs();
-      openJobModal(job.id); // รีโหลด Modal เพื่อคำนวณยอดคงเหลือใหม่
+      openJobModal(job.id);
     } catch (err) {
       showToast(err.message, "error");
     }
@@ -719,7 +788,7 @@ function renderPricingSection(job, isOwnerOrAdmin) {
 }
 
 // ============================================================================
-// Payment Section (ทุก Role เพิ่มรายการได้ / Owner-Admin เท่านั้น Void ได้)
+// Payment Section
 // ============================================================================
 let pendingEvidenceFile = null;
 
@@ -780,7 +849,6 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     </div>
   `;
 
-  // Void buttons
   if (isOwnerOrAdmin) {
     section.querySelectorAll("[data-void-tx-id]").forEach((btn) => {
       btn.addEventListener("click", preventDoubleSubmit(async () => {
@@ -803,7 +871,6 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     });
   }
 
-  // Evidence file picker
   pendingEvidenceFile = null;
   const evidenceInput = document.getElementById("payment-evidence-input");
   const evidencePreview = document.getElementById("evidence-preview");
@@ -821,7 +888,6 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     evidencePreview.innerHTML = `<img src="${URL.createObjectURL(file)}" style="width:80px;height:80px;object-fit:cover;border-radius:10px;" />`;
   });
 
-  // Record payment
   document.getElementById("btn-record-payment").addEventListener("click", preventDoubleSubmit(async () => {
     const transactionType = document.getElementById("payment-type-select").value;
     const amountValue = Number(document.getElementById("payment-amount-input").value);

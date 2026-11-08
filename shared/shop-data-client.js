@@ -56,12 +56,11 @@ export async function fetchJobImages({ accessToken, jobId }) {
 
   if (error) throw new Error("โหลดรูปภาพไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
 
-  // สร้าง Signed URL สำหรับแต่ละรูป (Bucket เป็น Private)
   const withUrls = await Promise.all(
     (data ?? []).map(async (img) => {
       const { data: signed } = await supabase.storage
         .from("job-photos")
-        .createSignedUrl(img.storage_path, 60 * 60); // 1 ชั่วโมง
+        .createSignedUrl(img.storage_path, 60 * 60);
       return { ...img, signedUrl: signed?.signedUrl ?? null };
     }),
   );
@@ -95,8 +94,7 @@ export async function fetchJobAppointments({ accessToken, jobId }) {
 }
 
 /**
- * ดึงรายชื่อ job_id ที่มีการแจ้งเตือน LINE ส่งไม่สำเร็จ (customer_notifications
- * หรือ group_notifications ที่ status='failed') ใช้สำหรับ Card แจ้งเตือน
+ * ดึงรายชื่อ job_id ที่มีการแจ้งเตือน LINE ส่งไม่สำเร็จ ใช้สำหรับ Card แจ้งเตือน
  * "งานที่มีปัญหาส่ง LINE ไม่สำเร็จ" บนหน้า Dashboard
  */
 export async function fetchJobIdsWithFailedNotifications({ accessToken }) {
@@ -158,4 +156,20 @@ export function computeTotalPaid(transactions) {
   return transactions
     .filter((tx) => !tx.is_voided)
     .reduce((sum, tx) => sum + (tx.transaction_type === "payment" ? tx.amount : -tx.amount), 0);
+}
+
+/**
+ * ดึงประวัติการแจ้งเตือน LINE หาลูกค้า ของงาน 1 รายการ (ใช้แสดงในส่วน
+ * "ประวัติการแจ้งเตือน LINE" พร้อมปุ่มลองส่งใหม่สำหรับรายการที่ล้มเหลว)
+ */
+export async function fetchJobCustomerNotifications({ accessToken, jobId }) {
+  const supabase = getSupabaseClient(accessToken);
+  const { data, error } = await supabase
+    .from("customer_notifications")
+    .select("id, notification_type, message_content, status, error_message, sent_at, retry_count, created_at")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error("โหลดประวัติการแจ้งเตือนไม่สำเร็จ");
+  return data ?? [];
 }
