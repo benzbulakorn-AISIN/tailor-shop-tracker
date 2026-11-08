@@ -11,7 +11,7 @@ let cachedToken = null;
 
 /**
  * คืนค่า Supabase Client ที่ผูกกับ Access Token ปัจจุบัน
- * @param {string|null} accessToken - Custom JWT จาก pin-login/refresh-session (null = Anonymous)
+ * @param {string|null} accessToken - Custom JWT จาก pin-login/refresh-session/customer-identify (null = Anonymous)
  */
 export function getSupabaseClient(accessToken = null) {
   if (cachedClient && cachedToken === accessToken) {
