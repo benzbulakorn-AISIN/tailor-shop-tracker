@@ -175,16 +175,27 @@
   import { formatThaiDate, formatThaiDateTime } from "../shared/utils.js";
 
   // ----------------------------------------------------------------------------
-  // Status Display Config (Icon + สี + ข้อความ เสมอ ไม่ใช้สีอย่างเดียว)
+  // Simplified Status Display (3 ระดับหลัก + ยกเลิก — ตรงกับฝั่ง Dashboard ร้าน)
+  // สถานะจริงในฐานข้อมูลยังมีครบ 6 ค่าเหมือนเดิม นี่คือการ "รวมป้าย" แสดงผลเท่านั้น
   // ----------------------------------------------------------------------------
-  const JOB_STATUS_DISPLAY = {
-    pending_confirmation: { label: "รอยืนยันนัด", icon: "⏳", color: "#f9a825" },
-    waiting: { label: "รอทำ", icon: "📋", color: "#1a73e8" },
-    in_progress: { label: "กำลังทำ", icon: "✂️", color: "#8e24aa" },
+  function getSimplifiedStatusKey(status) {
+    if (status === "completed") return "completed";
+    if (status === "picked_up") return "picked_up";
+    if (status === "cancelled") return "cancelled";
+    return "received"; // pending_confirmation, waiting, in_progress
+  }
+
+  const SIMPLIFIED_STATUS_DISPLAY = {
+    received: { label: "รับเข้าระบบ", icon: "📋", color: "#1a73e8" },
     completed: { label: "เสร็จแล้ว", icon: "✅", color: "#1e8e3e" },
-    picked_up: { label: "รับงานแล้ว", icon: "📦", color: "#5f6368" },
+    picked_up: { label: "รับแล้ว", icon: "📦", color: "#5f6368" },
     cancelled: { label: "ยกเลิก", icon: "🚫", color: "#d93025" },
   };
+
+  function getStatusDisplay(status) {
+    return SIMPLIFIED_STATUS_DISPLAY[getSimplifiedStatusKey(status)];
+  }
+
   const PAYMENT_STATUS_DISPLAY = {
     unpaid: { label: "ยังไม่ชำระ", icon: "⭕" },
     deposit_paid: { label: "ชำระมัดจำแล้ว", icon: "🔸" },
@@ -257,7 +268,7 @@
   }
 
   async function renderJobCard(job, accessToken) {
-    const statusInfo = JOB_STATUS_DISPLAY[job.status] ?? { label: job.status, icon: "❔", color: "#999" };
+    const statusInfo = getStatusDisplay(job.status);
     const quantityText = job.quantity_is_over_ten ? (job.quantity_note ?? "มากกว่า 10 ชิ้น") : `${job.quantity} ชิ้น`;
 
     const [images, paidTotal, notifications] = await Promise.all([
