@@ -115,3 +115,47 @@ export async function fetchJobIdsWithFailedNotifications({ accessToken }) {
 export function attachFailedNotificationFlag(jobs, failedJobIdSet) {
   return jobs.map((j) => ({ ...j, _hasFailedNotification: failedJobIdSet.has(j.id) }));
 }
+
+/**
+ * ดึงประวัติ Payment Transactions ของงาน 1 รายการ พร้อม Signed URL ของหลักฐาน
+ * การชำระเงิน (ถ้ามี) และชื่อผู้รับเงิน
+ */
+export async function fetchJobPaymentTransactions({ accessToken, jobId }) {
+  const supabase = getSupabaseClient(accessToken);
+  const { data, error } = await supabase
+    .from("payment_transactions")
+    .select(`
+      id, transaction_type, amount, payment_method, note,
+      is_voided, voided_at, void_reason, received_at,
+      shop_users!payment_transactions_received_by_fkey ( full_name ),
+      voider:shop_users!payment_transactions_voided_by_fkey ( full_name ),
+      payment_evidence ( id, storage_path )
+    `)
+    .eq("job_id", jobId)
+    .order("received_at", { ascending: false });
+
+  if (error) throw new Error("โหลดประวัติการชำระเงินไม่สำเร็จ");
+
+  const rows = data ?? [];
+  const withUrls = await Promise.all(
+    rows.map(async (tx) => {
+      const evidenceWithUrls = await Promise.all(
+        (tx.payment_evidence ?? []).map(async (ev) => {
+          const { data: signed } = await supabase.storage
+            .from("payment-evidence")
+            .createSignedUrl(ev.storage_path, 60 * 60);
+          return { ...ev, signedUrl: signed?.signedUrl ?? null };
+        }),
+      );
+      return { ...tx, payment_evidence: evidenceWithUrls };
+    }),
+  );
+  return withUrls;
+}
+
+/** คำนวณยอดชำระสุทธิ (payment - refund เฉพาะที่ไม่ถูก Void) จากรายการ Transaction */
+export function computeTotalPaid(transactions) {
+  return transactions
+    .filter((tx) => !tx.is_voided)
+    .reduce((sum, tx) => sum + (tx.transaction_type === "payment" ? tx.amount : -tx.amount), 0);
+}
