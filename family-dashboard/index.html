@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-<title>QE Tailor - Dashboard ร้าน</title>
+<title>ระบบติดตามงาน ร้านเย็บผ้าณัฏฐา</title>
 <style>
   :root {
     --primary: #1a73e8;
@@ -164,6 +164,7 @@
     align-items: center;
     margin: 10px 2px;
     font-weight: 700;
+    scroll-margin-top: 70px;
   }
   .job-card {
     background: #fff;
@@ -290,6 +291,13 @@
     display: inline-block;
     margin-bottom: 0;
   }
+  .quick-percent-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .quick-percent-row .btn { margin-bottom: 0; padding: 12px; font-size: 0.95rem; }
 
   /* ---------------- Modal (Job Detail) ---------------- */
   .modal-backdrop {
@@ -329,7 +337,6 @@
   .info-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.95rem; gap: 10px; }
   .info-row .label { color: var(--text-muted); white-space: nowrap; }
   .info-row .value { text-align: right; }
-  .info-row.highlight .value { font-weight: 800; font-size: 1.1rem; }
   textarea.note-input {
     width: 100%;
     min-height: 90px;
@@ -339,7 +346,7 @@
     font-family: inherit;
     font-size: 0.95rem;
   }
-  select.assign-select, input.confirm-date-input, select.confirm-time-select,
+  select.confirm-time-select, input.confirm-date-input,
   input.price-input, select.payment-method-select, input.payment-amount-input {
     width: 100%;
     font-size: 1rem;
@@ -451,7 +458,7 @@
 <!-- ======================== Login Screen ======================== -->
 <div id="screen-login" class="container hidden">
   <div class="login-card">
-    <h2 style="text-align:center;">🧵 QE Tailor Dashboard</h2>
+    <h2 style="text-align:center;">🧵 ระบบติดตามงาน ร้านเย็บผ้าณัฏฐา</h2>
     <div id="identity-list"></div>
     <div id="pin-section" class="hidden">
       <p>กรอก PIN 6 หลักของ <strong id="selected-name"></strong></p>
@@ -468,7 +475,7 @@
 <!-- ======================== Main Dashboard ======================== -->
 <div id="screen-dashboard" class="hidden">
   <div class="app-header">
-    <div class="title">🧵 QE Tailor</div>
+    <div class="title">🧵 ร้านเย็บผ้าณัฏฐา</div>
     <div style="display:flex;align-items:center;">
       <div class="user-info"><span id="header-user-name"></span><br/><span id="header-user-role" style="opacity:0.8;"></span></div>
       <button class="icon-btn" id="btn-refresh">🔄</button>
@@ -503,10 +510,6 @@
           <input type="date" id="filter-date-from" />
           <input type="date" id="filter-date-to" />
         </div>
-        <select id="filter-assignee">
-          <option value="">ผู้รับผิดชอบ: ทั้งหมด</option>
-          <option value="__unassigned__">ยังไม่มอบหมาย</option>
-        </select>
         <button class="btn btn-secondary" id="btn-clear-filters" style="margin-top:4px;">ล้างตัวกรองทั้งหมด</button>
       </div>
     </div>
@@ -521,7 +524,7 @@
       <div class="calendar-grid" id="calendar-grid" style="margin-top:4px;"></div>
     </div>
 
-    <div class="job-list-header">
+    <div class="job-list-header" id="job-list-anchor">
       <span>รายการงาน (<span id="job-count">0</span>)</span>
     </div>
     <div id="job-list"></div>

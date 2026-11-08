@@ -1,5 +1,13 @@
 // family-dashboard/dashboard.js
-// Logic หลักของ Family Dashboard (Phase 5 + Phase 6: Payments + Phase 7: LINE Notifications)
+// Logic หลักของ Family Dashboard (Phase 5-7 รวมกัน + ปรับปรุงตามคำขอผู้ใช้)
+//
+// สรุปการปรับปรุงล่าสุด:
+// 1) เรียงลำดับรายชื่อ Login ใหม่: เจ้าของร้าน → ผู้ดูแลระบบ → ผู้ช่วยร้าน 1 → ผู้ช่วยร้าน 2
+//    พร้อมแสดงชื่อจริงในวงเล็บ (Mapping ตาม shop_user_id ที่ Seed ไว้ตั้งแต่ Phase 2/3)
+// 2) กด Card สรุปแล้ว Auto-scroll ลงไปที่รายการงานทันที
+// 3) เพิ่มปุ่มคำนวณเงินมัดจำแบบ % (25%/50%) จากราคาประเมิน
+// 4) ตัดตัวเลือก "รับเงิน/คืนเงิน" ออก ให้เป็น "รับเงิน" เสมอ (ลดความซับซ้อน)
+// 5) เอาส่วน "ผู้รับผิดชอบ" ออกจาก Job Detail Modal ทั้งหมด (ตามคำขอให้ลดความรก)
 
 import { listLoginIdentities } from "../shared/auth-client.js";
 import {
@@ -16,7 +24,7 @@ import {
   fetchJobPaymentTransactions, computeTotalPaid, fetchJobCustomerNotifications,
 } from "../shared/shop-data-client.js";
 import {
-  confirmAppointment, changeJobStatus, assignJob, addJobNote, archiveJob,
+  confirmAppointment, changeJobStatus, addJobNote, archiveJob,
 } from "../shared/shop-actions-client.js";
 import { setJobPricing, recordPayment, voidPayment } from "../shared/payment-client.js";
 import { uploadPaymentEvidence } from "../shared/payment-evidence-upload.js";
@@ -26,6 +34,37 @@ import { PICKUP_TIME_SLOTS, JOB_TYPES_FALLBACK } from "../shared/job-constants.j
 import { getSupabaseClient } from "../shared/supabase-client.js";
 
 // ============================================================================
+// Identity Display Config (ข้อ 2: ลำดับ + ชื่อจริงในวงเล็บ)
+// ============================================================================
+// Mapping นี้อ้างอิงจาก shop_user_id ที่ Seed ไว้ตั้งแต่ Phase 2/3
+// (00000000-...-001=เจ้าของร้าน, 002=ผู้ดูแลระบบ, 003=ผู้ช่วยร้าน1, 004=ผู้ช่วยร้าน2)
+// หากบัญชีจริงใช้ ID ต่างจากนี้ การ Map ชื่อจะไม่ติด แต่ลำดับ Role ยังถูกต้องเสมอ
+const IDENTITY_NAME_OVERRIDES = {
+  "00000000-0000-0000-0000-000000000001": "ณัฏฐา",
+  "00000000-0000-0000-0000-000000000002": "บุลากร",
+  "00000000-0000-0000-0000-000000000003": "กนกวรรณ",
+  "00000000-0000-0000-0000-000000000004": "ธนวิทย์",
+};
+
+const ROLE_SORT_PRIORITY = { owner: 0, admin: 1, assistant: 2 };
+
+function sortIdentitiesForLogin(identities) {
+  return [...identities].sort((a, b) => {
+    const pa = ROLE_SORT_PRIORITY[a.role] ?? 99;
+    const pb = ROLE_SORT_PRIORITY[b.role] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return a.id.localeCompare(b.id); // เรียง assistant 1 มาก่อน 2 ตามลำดับ ID ที่ Seed ไว้
+  });
+}
+
+function buildIdentityDisplayLabel(identity) {
+  // ตัดคำว่า "(ตัวอย่าง)" ที่เป็น Placeholder ใน Seed Data ออก ให้ดูสะอาดตา
+  const cleanName = identity.full_name.replace(/\s*\(ตัวอย่าง\)\s*/g, "").trim();
+  const personalName = IDENTITY_NAME_OVERRIDES[identity.id];
+  return personalName ? `${cleanName} (${personalName})` : cleanName;
+}
+
+// ============================================================================
 // State
 // ============================================================================
 const state = {
@@ -33,7 +72,7 @@ const state = {
   shopUsers: [],
   jobTypes: [],
   activeCard: null,
-  filters: { status: "", jobTypeId: "", assignedTo: "", dateFrom: "", dateTo: "", searchText: "" },
+  filters: { status: "", jobTypeId: "", dateFrom: "", dateTo: "", searchText: "" },
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth(),
   selectedCalendarDate: null,
@@ -41,11 +80,6 @@ const state = {
 };
 
 const shopUserMap = new Map();
-
-function getShopUserName(id) {
-  if (!id) return "ยังไม่มอบหมาย";
-  return shopUserMap.get(id)?.full_name ?? "ไม่ทราบชื่อ";
-}
 
 // ============================================================================
 // Screen Elements
@@ -78,18 +112,18 @@ let selectedShopUserId = null;
 async function loadIdentities() {
   try {
     const { identities } = await listLoginIdentities();
+    const sortedIdentities = sortIdentitiesForLogin(identities);
     const listEl = document.getElementById("identity-list");
     const pinSectionEl = document.getElementById("pin-section");
     listEl.innerHTML = "";
-    identities.forEach((identity) => {
+    sortedIdentities.forEach((identity) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "identity-btn";
-      const roleLabel = { owner: "เจ้าของร้าน", admin: "ผู้ดูแลระบบ", assistant: "ผู้ช่วยร้าน" }[identity.role] ?? identity.role;
-      btn.textContent = `${identity.full_name} (${roleLabel})`;
+      btn.textContent = buildIdentityDisplayLabel(identity);
       btn.addEventListener("click", () => {
         selectedShopUserId = identity.id;
-        document.getElementById("selected-name").textContent = identity.full_name;
+        document.getElementById("selected-name").textContent = buildIdentityDisplayLabel(identity);
         document.querySelectorAll(".identity-btn").forEach((b) => b.classList.remove("selected"));
         btn.classList.add("selected");
         pinSectionEl.classList.remove("hidden");
@@ -170,10 +204,10 @@ async function loadDashboardData() {
     state.shopUsers = identities;
     shopUserMap.clear();
     identities.forEach((u) => shopUserMap.set(u.id, u));
+    const currentUser = shopUserMap.get(getSessionSnapshot().shopUserId);
     document.getElementById("header-user-name").textContent =
-      shopUserMap.get(getSessionSnapshot().shopUserId)?.full_name ?? "";
+      currentUser ? buildIdentityDisplayLabel(currentUser) : "";
 
-    populateAssigneeFilter();
     populateJobTypeFilter();
 
     await refreshJobs();
@@ -221,7 +255,7 @@ document.getElementById("btn-refresh").addEventListener("click", preventDoubleSu
 }));
 
 // ============================================================================
-// Summary Cards
+// Summary Cards (ข้อ 3: Auto-scroll ไปที่รายการงานเมื่อกด Card)
 // ============================================================================
 const CARD_DEFINITIONS = [
   { key: "pendingConfirmation", label: "งานใหม่รอยืนยัน", icon: "🆕" },
@@ -251,6 +285,8 @@ function renderSummaryCards() {
       state.activeCard = state.activeCard === def.key ? null : def.key;
       state.selectedCalendarDate = null;
       renderAll();
+      // Auto-scroll ลงไปที่รายการงานทันที ไม่ต้องให้ผู้ใช้เลื่อนเอง
+      document.getElementById("job-list-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     grid.appendChild(card);
   });
@@ -265,17 +301,6 @@ function getCardFilteredJobs() {
 // ============================================================================
 // Filters / Search
 // ============================================================================
-function populateAssigneeFilter() {
-  const select = document.getElementById("filter-assignee");
-  while (select.options.length > 2) select.remove(2);
-  state.shopUsers.forEach((u) => {
-    const opt = document.createElement("option");
-    opt.value = u.id;
-    opt.textContent = u.full_name;
-    select.appendChild(opt);
-  });
-}
-
 function populateJobTypeFilter() {
   const select = document.getElementById("filter-job-type");
   select.innerHTML = '<option value="">ประเภทงาน: ทั้งหมด</option>';
@@ -306,10 +331,6 @@ function bindFilterInputs() {
     state.filters.jobTypeId = e.target.value;
     renderJobList();
   });
-  document.getElementById("filter-assignee").addEventListener("change", (e) => {
-    state.filters.assignedTo = e.target.value;
-    renderJobList();
-  });
   document.getElementById("filter-date-from").addEventListener("change", (e) => {
     state.filters.dateFrom = e.target.value;
     renderJobList();
@@ -319,11 +340,10 @@ function bindFilterInputs() {
     renderJobList();
   });
   document.getElementById("btn-clear-filters").addEventListener("click", () => {
-    state.filters = { status: "", jobTypeId: "", assignedTo: "", dateFrom: "", dateTo: "", searchText: "" };
+    state.filters = { status: "", jobTypeId: "", dateFrom: "", dateTo: "", searchText: "" };
     document.getElementById("search-input").value = "";
     document.getElementById("filter-status").value = "";
     document.getElementById("filter-job-type").value = "";
-    document.getElementById("filter-assignee").value = "";
     document.getElementById("filter-date-from").value = "";
     document.getElementById("filter-date-to").value = "";
     state.activeCard = null;
@@ -375,6 +395,7 @@ function renderCalendar() {
       state.selectedCalendarDate = state.selectedCalendarDate === isoDate ? null : isoDate;
       state.activeCard = null;
       renderAll();
+      document.getElementById("job-list-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     gridEl.appendChild(cell);
   });
@@ -428,7 +449,6 @@ function renderJobList() {
       </div>
       <div class="job-card-meta">
         <span>✂️ ${job.job_types?.label_th ?? job.job_type_other ?? "-"}</span>
-        <span>👤 ${getShopUserName(job.assigned_to)}</span>
         ${job.confirmed_pickup_date ? `<span>📅 ${formatThaiDate(job.confirmed_pickup_date)} ${job.confirmed_pickup_time ?? ""} น.</span>` : `<span>📅 ต้องการ ${formatThaiDate(job.requested_pickup_date)}</span>`}
         ${job.is_urgent ? '<span class="urgent-tag">🚨 ด่วน</span>' : ""}
         ${job._hasFailedNotification ? '<span class="urgent-tag" style="background:#fff3e0;color:#e65100;">📵 LINE ไม่สำเร็จ</span>' : ""}
@@ -595,15 +615,6 @@ async function openJobModal(jobId) {
     </div>
 
     <div class="modal-section">
-      <h3>👥 ผู้รับผิดชอบ</h3>
-      <select class="assign-select" id="assign-select">
-        <option value="">-- ยังไม่มอบหมาย --</option>
-        ${state.shopUsers.map((u) => `<option value="${u.id}" ${u.id === job.assigned_to ? "selected" : ""}>${u.full_name}</option>`).join("")}
-      </select>
-      <button class="btn btn-secondary" id="btn-save-assign">บันทึกผู้รับผิดชอบ</button>
-    </div>
-
-    <div class="modal-section">
       <h3>📝 หมายเหตุภายใน (ร้านเท่านั้น ลูกค้าไม่เห็น)</h3>
       <textarea class="note-input" id="note-input" placeholder="เพิ่มหมายเหตุ...">${job.internal_note ?? ""}</textarea>
       <button class="btn btn-secondary" id="btn-save-note" style="margin-top:8px;">บันทึกหมายเหตุ</button>
@@ -618,24 +629,22 @@ async function openJobModal(jobId) {
 
   document.getElementById("modal-close-btn").addEventListener("click", closeJobModal);
 
+  // ---------------- Pricing Section ----------------
   renderPricingSection(job, isOwnerOrAdmin);
+
+  // ---------------- Payment Section ----------------
   renderPaymentSection(job, paymentTransactions, totalPaid, balance, paymentInfo, isOwnerOrAdmin);
+
+  // ---------------- Appointment Section ----------------
   renderAppointmentSection(job, isOwnerOrAdmin);
+
+  // ---------------- Notification History ----------------
   renderNotificationHistorySection(customerNotifications, isOwnerOrAdmin, job.id);
+
+  // ---------------- Status Buttons ----------------
   renderStatusButtons(job);
 
-  document.getElementById("btn-save-assign").addEventListener("click", preventDoubleSubmit(async () => {
-    const selectEl = document.getElementById("assign-select");
-    try {
-      await assignJob({ accessToken: getAccessToken(), jobId, shopUserId: selectEl.value || null });
-      showToast("บันทึกผู้รับผิดชอบสำเร็จ", "success");
-      await refreshJobs();
-      closeJobModal();
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  }));
-
+  // ---------------- Note ----------------
   document.getElementById("btn-save-note").addEventListener("click", preventDoubleSubmit(async () => {
     const noteEl = document.getElementById("note-input");
     try {
@@ -647,6 +656,7 @@ async function openJobModal(jobId) {
     }
   }));
 
+  // ---------------- Archive (Owner/Admin) ----------------
   const archiveBtn = document.getElementById("btn-archive-job");
   if (archiveBtn) {
     archiveBtn.addEventListener("click", preventDoubleSubmit(async () => {
@@ -669,7 +679,7 @@ async function openJobModal(jobId) {
 }
 
 // ============================================================================
-// Notification History Section (Phase 7)
+// Notification History Section
 // ============================================================================
 function renderNotificationHistorySection(notifications, isOwnerOrAdmin, jobId) {
   const section = document.getElementById("notification-history-section");
@@ -725,7 +735,7 @@ function renderNotificationHistorySection(notifications, isOwnerOrAdmin, jobId) 
 }
 
 // ============================================================================
-// Pricing Section (Owner/Admin: editable, Assistant: read-only)
+// Pricing Section (ข้อ 4: เพิ่มปุ่ม % คำนวณเงินมัดจำอัตโนมัติ)
 // ============================================================================
 function renderPricingSection(job, isOwnerOrAdmin) {
   const section = document.getElementById("pricing-section");
@@ -748,9 +758,27 @@ function renderPricingSection(job, isOwnerOrAdmin) {
     <label style="font-weight:600;">ราคาสรุปจริง (บาท)</label>
     <input type="number" min="0" step="0.01" class="price-input" id="price-final-input" value="${job.price_final ?? ""}" placeholder="ยังไม่ระบุ" />
     <label style="font-weight:600;">เงินมัดจำที่ต้องการ (บาท)</label>
+    <div class="quick-percent-row">
+      <button type="button" class="btn btn-secondary" id="btn-deposit-25">มัดจำ 25%</button>
+      <button type="button" class="btn btn-secondary" id="btn-deposit-50">มัดจำ 50%</button>
+    </div>
     <input type="number" min="0" step="0.01" class="price-input" id="deposit-amount-input" value="${job.deposit_amount ?? 0}" />
     <button class="btn btn-secondary" id="btn-save-pricing">บันทึกราคา</button>
   `;
+
+  // ปุ่มคำนวณเงินมัดจำจาก % ของราคาประเมิน
+  function setDepositByPercent(percent) {
+    const estEl = document.getElementById("price-estimate-input");
+    const depositEl = document.getElementById("deposit-amount-input");
+    const estimate = Number(estEl.value);
+    if (!estEl.value || Number.isNaN(estimate) || estimate <= 0) {
+      showToast("กรุณากรอกราคาประเมินก่อน", "error");
+      return;
+    }
+    depositEl.value = Math.round(estimate * percent);
+  }
+  document.getElementById("btn-deposit-25").addEventListener("click", () => setDepositByPercent(0.25));
+  document.getElementById("btn-deposit-50").addEventListener("click", () => setDepositByPercent(0.5));
 
   document.getElementById("btn-save-pricing").addEventListener("click", preventDoubleSubmit(async () => {
     const estEl = document.getElementById("price-estimate-input");
@@ -788,7 +816,7 @@ function renderPricingSection(job, isOwnerOrAdmin) {
 }
 
 // ============================================================================
-// Payment Section
+// Payment Section (ข้อ 5: ตัดตัวเลือก รับเงิน/คืนเงิน ออก ให้เป็น "รับเงิน" เสมอ)
 // ============================================================================
 let pendingEvidenceFile = null;
 
@@ -829,11 +857,7 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     ${transactionsHtml}
 
     <div style="margin-top:16px;">
-      <h3 style="font-size:0.95rem;">➕ บันทึกรับเงิน / คืนเงิน</h3>
-      <select class="payment-method-select" id="payment-type-select">
-        <option value="payment">รับเงิน</option>
-        <option value="refund">คืนเงิน</option>
-      </select>
+      <h3 style="font-size:0.95rem;">➕ บันทึกรับเงิน</h3>
       <input type="number" min="0.01" step="0.01" class="payment-amount-input" id="payment-amount-input" placeholder="จำนวนเงิน (บาท)" />
       <select class="payment-method-select" id="payment-method-select">
         <option value="cash">เงินสด</option>
@@ -845,10 +869,11 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
       <div class="upload-evidence-btn" id="btn-pick-evidence">📷 แนบรูปหลักฐานการชำระเงิน (ถ้ามี)</div>
       <input type="file" id="payment-evidence-input" accept="image/jpeg,image/png,image/webp" class="hidden" />
       <div id="evidence-preview" style="margin-top:8px;"></div>
-      <button class="btn btn-success" id="btn-record-payment" style="margin-top:10px;">บันทึกรายการ</button>
+      <button class="btn btn-success" id="btn-record-payment" style="margin-top:10px;">บันทึกรับเงิน</button>
     </div>
   `;
 
+  // Void buttons
   if (isOwnerOrAdmin) {
     section.querySelectorAll("[data-void-tx-id]").forEach((btn) => {
       btn.addEventListener("click", preventDoubleSubmit(async () => {
@@ -871,6 +896,7 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     });
   }
 
+  // Evidence file picker
   pendingEvidenceFile = null;
   const evidenceInput = document.getElementById("payment-evidence-input");
   const evidencePreview = document.getElementById("evidence-preview");
@@ -888,8 +914,8 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
     evidencePreview.innerHTML = `<img src="${URL.createObjectURL(file)}" style="width:80px;height:80px;object-fit:cover;border-radius:10px;" />`;
   });
 
+  // Record payment (ประเภทรายการเป็น "รับเงิน" (payment) เสมอ ไม่มีตัวเลือกคืนเงินแล้ว)
   document.getElementById("btn-record-payment").addEventListener("click", preventDoubleSubmit(async () => {
-    const transactionType = document.getElementById("payment-type-select").value;
     const amountValue = Number(document.getElementById("payment-amount-input").value);
     const paymentMethod = document.getElementById("payment-method-select").value;
     const note = document.getElementById("payment-note-input").value.trim();
@@ -906,7 +932,7 @@ function renderPaymentSection(job, transactions, totalPaid, balance, paymentInfo
       const result = await recordPayment({
         accessToken: getAccessToken(),
         jobId: job.id,
-        transactionType,
+        transactionType: "payment",
         amount: amountValue,
         paymentMethod,
         note,
