@@ -9,7 +9,7 @@
 export const APP_CONFIG = {
   // Supabase Project (Public: Anon Key ปลอดภัยที่จะเปิดเผย เพราะ RLS คุมสิทธิ์จริง)
   SUPABASE_URL: "https://itcajghewtxtudoaqaxa.supabase.co",
-  SUPABASE_ANON_KEY: "__REPLACE_WITH_ANON_KEY__",
+  SUPABASE_ANON_KEY: "sb_publishable_XpNogxpuUIHxZVZSoNQzUA_1EVPcV-e",
 
   // Base URL ของ Edge Functions (ปกติคือ SUPABASE_URL + /functions/v1)
   FUNCTIONS_BASE_URL: "https://itcajghewtxtudoaqaxa.supabase.co/functions/v1",
