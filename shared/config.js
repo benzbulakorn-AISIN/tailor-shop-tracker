@@ -17,7 +17,7 @@ export const APP_CONFIG = {
   // LINE LIFF (Public: LIFF ID ไม่ใช่ความลับ ต้องฝังใน Client เสมอ)
   // ยังไม่มีค่าจริงจนกว่าจะถึง Phase 8 (LINE Official Account Setup)
   LIFF_ID_CUSTOMER_FORM: "2012466036-CZq9wxw1",
-  LIFF_ID_CUSTOMER_STATUS: "__REPLACE_WITH_LIFF_ID__",
+  LIFF_ID_CUSTOMER_STATUS: "2012466036-Oo4bgmZH",
 
   // โหมดจำลอง LIFF ชั่วคราว (ใช้ทดสอบฟอร์มก่อนมี LINE Official Account จริง)
   // ⚠️ ต้องเปลี่ยนเป็น false ก่อน Deploy ใช้งานจริงกับลูกค้า (ทำใน Phase 8)
