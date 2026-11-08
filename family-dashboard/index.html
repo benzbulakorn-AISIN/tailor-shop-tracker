@@ -362,6 +362,39 @@
     margin: 10px 0 16px 0;
   }
 
+  /* ---------------- Payment Toggle Pills (ยังไม่ชำระ / ชำระแล้ว) ---------------- */
+  .payment-toggle-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .payment-toggle-btn {
+    padding: 16px 8px;
+    border-radius: 14px;
+    border: 2px solid var(--border);
+    background: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    text-align: center;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .payment-toggle-btn.active-unpaid {
+    border-color: var(--danger);
+    background: #fdecea;
+    color: var(--danger);
+  }
+  .payment-toggle-btn.active-paid {
+    border-color: var(--success);
+    background: #e6f4ea;
+    color: var(--success);
+  }
+  .payment-toggle-btn:disabled {
+    cursor: default;
+    opacity: 0.85;
+  }
+
   /* ---------------- Modal (Job Detail) ---------------- */
   .modal-backdrop {
     position: fixed; inset: 0;
@@ -441,7 +474,7 @@
     margin-bottom: 10px;
   }
 
-  /* ---------------- Payment List ---------------- */
+  /* ---------------- Payment History (ledger) ---------------- */
   .payment-tx-card {
     background: #f8f9fa;
     border-radius: 12px;
@@ -460,37 +493,6 @@
   .voided-tag {
     background: #fdecea; color: var(--danger); border-radius: 8px;
     padding: 2px 8px; font-size: 0.75rem; font-weight: 700;
-  }
-  .upload-evidence-btn {
-    border: 2px dashed var(--border);
-    border-radius: 10px;
-    padding: 10px;
-    text-align: center;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 0.85rem;
-    margin-top: 10px;
-  }
-  .evidence-preview-thumb {
-    position: relative;
-    width: 90px;
-    height: 90px;
-    display: inline-block;
-    margin-top: 8px;
-  }
-  .evidence-preview-thumb img {
-    width: 100%; height: 100%; object-fit: cover; border-radius: 10px;
-  }
-  .evidence-preview-thumb .remove-btn {
-    position: absolute;
-    top: -6px; right: -6px;
-    background: rgba(0,0,0,0.6);
-    color: #fff;
-    border: none;
-    border-radius: 50%;
-    width: 24px; height: 24px;
-    font-size: 0.9rem;
-    cursor: pointer;
   }
   .balance-box {
     background: #e8f0fe;
