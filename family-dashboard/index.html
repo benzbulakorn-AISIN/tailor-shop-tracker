@@ -43,7 +43,8 @@
     z-index: 50;
   }
   .app-header .title { font-size: 1.15rem; font-weight: 700; }
-  .app-header .user-info { font-size: 0.85rem; text-align: right; }
+  .app-header .user-info { font-size: 0.85rem; text-align: right; display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+  .app-header .user-info-text { text-align: right; }
   .app-header button.icon-btn {
     background: rgba(255,255,255,0.2);
     border: none;
@@ -53,6 +54,37 @@
     font-size: 0.9rem;
     cursor: pointer;
     margin-left: 8px;
+  }
+  .notif-failed-badge {
+    position: relative;
+    background: rgba(255,255,255,0.25);
+    border: none;
+    color: #fff;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .notif-failed-badge .badge-count {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 800;
+    border-radius: 999px;
+    min-width: 15px;
+    height: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
   }
   .offline-banner {
     background: #fff3e0;
@@ -108,6 +140,41 @@
     cursor: pointer;
     padding: 6px 0;
   }
+  .show-picked-up-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 2px 2px 2px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 26px;
+    flex-shrink: 0;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: #ccc;
+    border-radius: 999px;
+    transition: 0.2s;
+  }
+  .switch-slider::before {
+    position: absolute;
+    content: "";
+    height: 20px; width: 20px;
+    left: 3px; bottom: 3px;
+    background-color: #fff;
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+  .switch input:checked + .switch-slider { background-color: var(--primary); }
+  .switch input:checked + .switch-slider::before { transform: translateX(18px); }
 
   /* ---------------- Calendar ---------------- */
   .calendar-card {
@@ -566,7 +633,12 @@
   <div class="app-header">
     <div class="title">🧵 ร้านเย็บผ้าณัฏฐา</div>
     <div style="display:flex;align-items:center;">
-      <div class="user-info"><span id="header-user-name"></span><br/><span id="header-user-role" style="opacity:0.8;"></span></div>
+      <div class="user-info">
+        <div class="user-info-text"><span id="header-user-name"></span><br/><span id="header-user-role" style="opacity:0.8;"></span></div>
+        <button class="notif-failed-badge hidden" id="btn-notif-failed" title="งานที่ LINE ส่งไม่สำเร็จ">
+          📵<span class="badge-count hidden" id="notif-failed-count">0</span>
+        </button>
+      </div>
       <button class="icon-btn" id="btn-refresh">🔄</button>
       <button class="icon-btn" id="btn-logout">ออก</button>
     </div>
@@ -599,6 +671,13 @@
           <input type="date" id="filter-date-to" />
         </div>
         <button class="btn btn-secondary" id="btn-clear-filters" style="margin-top:4px;">ล้างตัวกรองทั้งหมด</button>
+      </div>
+      <div class="show-picked-up-row">
+        <span>แสดงงานที่ "รับแล้ว"</span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-show-picked-up" />
+          <span class="switch-slider"></span>
+        </label>
       </div>
     </div>
 

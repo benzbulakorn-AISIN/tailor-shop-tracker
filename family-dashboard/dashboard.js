@@ -1,17 +1,15 @@
 // family-dashboard/dashboard.js
-// Logic หลักของ Family Dashboard — เวอร์ชันแก้ไข UX 3 จุดตามคำขอผู้ใช้
+// Logic หลักของ Family Dashboard — เวอร์ชันลดปุ่มสูงสุดสำหรับผู้สูงอายุ (ต่อเนื่อง)
 //
-// สรุปการปรับปรุงรอบนี้:
-// 1) ปิดหน้าต่างรายละเอียดงานเมื่อไหร่ (ไม่ว่ากดปิดเฉยๆ หรือทำรายการสำเร็จ)
-//    ระบบจะรีเฟรชข้อมูลหน้าหลักให้อัตโนมัติเสมอ ไม่ต้องกดปุ่ม 🔄 เอง
-// 2) ปุ่ม "ยังไม่ชำระ" ในหน้าการชำระเงิน กดได้แล้ว (เฉพาะเจ้าของร้าน/ผู้ดูแลระบบ)
-//    เพื่อย้อนกลับกรณีกด "ชำระแล้ว" ผิด — ต้องระบุเหตุผลสั้นๆ ป้องกันกดเผลอซ้ำ
-//    (เบื้องหลังเรียก Void รายการรับเงินทั้งหมดของงานนั้น ไม่ลบประวัติจริง)
-// 3) แถบ 3 สถานะด้านบนกดได้ — กดแล้วเลื่อนจอลงไปยังปุ่มทำรายการจริงให้อัตโนมัติ
-//    (เปลี่ยนมาใช้ Event Delegation ผูกครั้งเดียวตอนเริ่มระบบ แก้ปัญหาที่เคยกดไม่ติด)
-// 4) เพิ่ม Auto-refresh อัตโนมัติทุก 20 วินาที เพื่อให้เห็นงานใหม่จากลูกค้าทันที
-//    โดยไม่ต้องกดปุ่ม 🔄 เอง (จะไม่รีเฟรชถ้ามีหน้าต่างรายละเอียดงานเปิดอยู่
-//    เพื่อไม่ให้ข้อมูลที่กำลังกรอกอยู่หายไปกลางคัน)
+// สรุปการปรับปรุงรอบนี้ (ล่าสุด):
+// 1) ซ่อนงานสถานะ "รับแล้ว" (picked_up) ออกจากรายการเป็นค่าเริ่มต้นอัตโนมัติ
+//    พร้อมสวิตช์เล็กๆ ในแถบตัวกรองให้กดดูย้อนหลังได้ถ้าต้องการ
+// 2) ย้ายการ์ด "LINE ส่งไม่สำเร็จ" ออกจากตารางสรุปใหญ่ ไปเป็นไอคอนกระดิ่งเล็กๆ
+//    ข้างชื่อผู้ใช้ที่ Header แทน (มีตัวเลขนับแจ้งจำนวน) กดแล้วกรองแสดงเฉพาะงาน
+//    ที่มีปัญหา ไม่แสดงไอคอนเลยถ้าไม่มีงานที่มีปัญหา
+//
+// (คงการแก้ไขรอบก่อนหน้าไว้ทั้งหมด: Event Delegation สำหรับแถบ 3 สถานะ,
+// Auto-refresh ทุก 20 วินาที, ปุ่มรวมสำหรับยืนยันรับงาน/ชำระเงิน ฯลฯ)
 
 import { listLoginIdentities } from "../shared/auth-client.js";
 import {
@@ -91,6 +89,8 @@ const state = {
   shopUsers: [],
   jobTypes: [],
   activeCard: null,
+  showPickedUp: false, // ซ่อนงาน "รับแล้ว" เป็นค่าเริ่มต้น
+  showNotifFailedOnly: false,
   filters: { status: "", jobTypeId: "", dateFrom: "", dateTo: "", searchText: "" },
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth(),
@@ -305,7 +305,37 @@ function stopAutoRefresh() {
 }
 
 // ============================================================================
-// Summary Cards
+// Header: ไอคอนแจ้งเตือน "LINE ส่งไม่สำเร็จ" (ย้ายมาจากการ์ดสรุปใหญ่)
+// ============================================================================
+function renderNotifFailedBadge() {
+  const cardData = computeDashboardCards(state.allJobs);
+  const failedJobs = cardData.notificationFailed ?? [];
+  const btn = document.getElementById("btn-notif-failed");
+  const countEl = document.getElementById("notif-failed-count");
+
+  if (failedJobs.length === 0) {
+    btn.classList.add("hidden");
+    state.showNotifFailedOnly = false; // ถ้าไม่มีปัญหาแล้ว เลิกกรองค้างไว้
+    return;
+  }
+  btn.classList.remove("hidden");
+  countEl.classList.remove("hidden");
+  countEl.textContent = failedJobs.length > 99 ? "99+" : String(failedJobs.length);
+  btn.classList.toggle("active", state.showNotifFailedOnly);
+}
+
+document.getElementById("btn-notif-failed").addEventListener("click", () => {
+  state.showNotifFailedOnly = !state.showNotifFailedOnly;
+  if (state.showNotifFailedOnly) {
+    state.activeCard = null;
+    state.selectedCalendarDate = null;
+  }
+  renderAll();
+  document.getElementById("job-list-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+// ============================================================================
+// Summary Cards (ตัด "LINE ส่งไม่สำเร็จ" ออกจากตารางนี้แล้ว — ย้ายไปอยู่ที่ Header)
 // ============================================================================
 const CARD_DEFINITIONS = [
   { key: "pendingConfirmation", label: "งานใหม่รอยืนยัน", icon: "🆕" },
@@ -314,7 +344,6 @@ const CARD_DEFINITIONS = [
   { key: "dueWithin3Days", label: "งานภายใน 3 วัน", icon: "⏱️" },
   { key: "overdue", label: "งานเลยกำหนด", icon: "⚠️" },
   { key: "completedWaitingPickup", label: "เสร็จรอรับ", icon: "📦" },
-  { key: "notificationFailed", label: "LINE ส่งไม่สำเร็จ", icon: "📵" },
 ];
 
 function renderSummaryCards() {
@@ -334,6 +363,7 @@ function renderSummaryCards() {
     card.addEventListener("click", () => {
       state.activeCard = state.activeCard === def.key ? null : def.key;
       state.selectedCalendarDate = null;
+      state.showNotifFailedOnly = false;
       renderAll();
       document.getElementById("job-list-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -342,6 +372,10 @@ function renderSummaryCards() {
 }
 
 function getCardFilteredJobs() {
+  if (state.showNotifFailedOnly) {
+    const cardData = computeDashboardCards(state.allJobs);
+    return cardData.notificationFailed ?? [];
+  }
   if (!state.activeCard) return state.allJobs;
   const cardData = computeDashboardCards(state.allJobs);
   return cardData[state.activeCard] ?? [];
@@ -365,6 +399,11 @@ document.getElementById("btn-toggle-filters").addEventListener("click", (e) => {
   const panel = document.getElementById("filter-panel");
   panel.classList.toggle("hidden");
   e.target.textContent = panel.classList.contains("hidden") ? "ตัวกรองเพิ่มเติม ▾" : "ตัวกรองเพิ่มเติม ▴";
+});
+
+document.getElementById("toggle-show-picked-up").addEventListener("change", (e) => {
+  state.showPickedUp = e.target.checked;
+  renderJobList();
 });
 
 function bindFilterInputs() {
@@ -397,6 +436,7 @@ function bindFilterInputs() {
     document.getElementById("filter-date-to").value = "";
     state.activeCard = null;
     state.selectedCalendarDate = null;
+    state.showNotifFailedOnly = false;
     renderAll();
   });
 }
@@ -443,6 +483,7 @@ function renderCalendar() {
     cell.addEventListener("click", () => {
       state.selectedCalendarDate = state.selectedCalendarDate === isoDate ? null : isoDate;
       state.activeCard = null;
+      state.showNotifFailedOnly = false;
       renderAll();
       document.getElementById("job-list-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -466,6 +507,13 @@ document.getElementById("btn-cal-next").addEventListener("click", () => {
 // ============================================================================
 function renderJobList() {
   let jobs = getCardFilteredJobs();
+
+  // ซ่อนงาน "รับแล้ว" เป็นค่าเริ่มต้น เว้นแต่เปิดสวิตช์ไว้ หรือกำลังดู Card/ตัวกรอง
+  // ที่ต้องการงานกลุ่มนั้นโดยตรงอยู่แล้ว (เช่น ไม่ไปซ่อนซ้ำถ้าผู้ใช้เลือกสถานะ
+  // "รับแล้ว" ในตัวกรองสถานะเองตรงๆ)
+  if (!state.showPickedUp && state.filters.status !== "picked_up") {
+    jobs = jobs.filter((j) => j.status !== "picked_up");
+  }
 
   if (state.selectedCalendarDate) {
     jobs = jobs.filter((j) => j.confirmed_pickup_date === state.selectedCalendarDate);
@@ -513,6 +561,7 @@ function renderJobList() {
 // Render All
 // ============================================================================
 function renderAll() {
+  renderNotifFailedBadge();
   renderSummaryCards();
   renderCalendar();
   renderJobList();
@@ -559,7 +608,6 @@ function showConfirmDialog({ text, requireReason = false, confirmLabel = "ยื
 
 // ============================================================================
 // Status Stepper (3 ขั้นหลัก: รับเข้าระบบ → เสร็จแล้ว → รับแล้ว)
-// กดที่ขั้นตอนไหนก็ได้ จะเลื่อนจอลงไปยังปุ่มทำรายการจริงให้อัตโนมัติ
 // ============================================================================
 const STEPPER_SEQUENCE = ["received", "completed", "picked_up"];
 const STEPPER_LABELS = {
@@ -654,7 +702,6 @@ async function openJobModal(jobId) {
   const statusInfo = getStatusDisplay(job.status);
   const quantityText = job.quantity_is_over_ten ? (job.quantity_note ?? "มากกว่า 10 ชิ้น") : `${job.quantity} ชิ้น`;
   const totalPaid = computeTotalPaid(paymentTransactions);
-  // ราคาสรุปจริงถูกตั้งให้เท่ากับราคาประเมินเสมอ (Auto-Sync ตอนบันทึก)
   const balance = job.price_final != null ? job.price_final - totalPaid : null;
   const isFullyPaid = job.price_estimate != null && balance != null && balance <= 0;
   const isPendingConfirmation = job.status === "pending_confirmation";
@@ -692,7 +739,6 @@ async function openJobModal(jobId) {
       </div>
     </div>` : ""}
 
-    <!-- ลำดับ: ยืนยันรับงาน/ราคา+นัด → สถานะงาน → การชำระเงิน → แจ้งเตือน -->
     <div class="modal-section" id="appointment-section"></div>
 
     <div class="modal-section" id="status-section">
@@ -894,7 +940,6 @@ function renderAppointmentSection(job, isOwnerOrAdmin, isPendingConfirmation) {
     return;
   }
 
-  // ---------------- งานที่ยืนยันแล้ว: รวม "ราคาประเมิน" + "วันนัดรับ" เป็นฟอร์มเดียว ----------------
   section.innerHTML = `
     <h3>💰 ราคาและวันนัด</h3>
     <label style="font-weight:600;">ราคาประเมิน (บาท)</label>
@@ -962,10 +1007,7 @@ function renderAppointmentSection(job, isOwnerOrAdmin, isPendingConfirmation) {
 }
 
 // ============================================================================
-// Payment Section — Toggle 2 ทาง: "ยังไม่ชำระ" / "ชำระแล้ว"
-// - กด "ชำระแล้ว" (ตอนยังไม่ครบ): เก็บยอดคงเหลือทั้งหมดให้อัตโนมัติ (เงินสด)
-// - กด "ยังไม่ชำระ" (ตอนชำระครบแล้ว): ย้อนกลับโดย Void รายการรับเงินทั้งหมด
-//   ของงานนี้ (เฉพาะเจ้าของร้าน/ผู้ดูแลระบบ ต้องระบุเหตุผลสั้นๆ กันกดเผลอซ้ำ)
+// Payment Section — 2 ปุ่มติ๊ก "ยังไม่ชำระ" / "ชำระแล้ว" (กดกลับได้ถ้าผิดพลาด)
 // ============================================================================
 function renderPaymentSection(job, transactions, totalPaid, balance, isFullyPaid, isOwnerOrAdmin, isPendingConfirmation) {
   const section = document.getElementById("payment-section");
@@ -976,7 +1018,6 @@ function renderPaymentSection(job, transactions, totalPaid, balance, isFullyPaid
   }
 
   const hasPriceSet = job.price_estimate != null;
-  const canToggle = hasPriceSet && isOwnerOrAdmin;
 
   const balanceHtml = hasPriceSet
     ? (isFullyPaid
@@ -987,27 +1028,22 @@ function renderPaymentSection(job, transactions, totalPaid, balance, isFullyPaid
            </div>`)
     : `<div class="warning-box">⚠️ ยังไม่ได้ระบุราคาประเมิน จึงยังคำนวณยอดคงเหลือไม่ได้</div>`;
 
+  const activeTransactions = transactions.filter((tx) => !tx.is_voided);
   const transactionsHtml = transactions.length === 0
     ? ""
-    : `<h3 style="font-size:0.95rem;margin-top:14px;">📜 ประวัติการชำระเงิน</h3>${transactions.map(renderPaymentTxCardHtml()).join("")}`;
-
-  // ปุ่ม "ยังไม่ชำระ" กดได้เมื่อ: ชำระครบแล้ว + เป็น Owner/Admin (ใช้ย้อนกลับ)
-  // ปุ่ม "ชำระแล้ว" กดได้เมื่อ: ยังไม่ครบ + มีราคาตั้งไว้แล้ว
-  const unpaidClickable = isFullyPaid && canToggle;
-  const paidClickable = !isFullyPaid && hasPriceSet;
+    : `<h3 style="font-size:0.95rem;margin-top:14px;">📜 ประวัติการชำระเงิน</h3>${transactions.map(renderPaymentTxCardHtml).join("")}`;
 
   section.innerHTML = `
     <h3>💳 การชำระเงิน</h3>
     <div class="payment-toggle-row">
-      <button type="button" class="payment-toggle-btn ${!isFullyPaid ? "active-unpaid" : ""}" id="btn-mark-unpaid" ${unpaidClickable ? "" : "disabled"}>⭕ ยังไม่ชำระ</button>
-      <button type="button" class="payment-toggle-btn ${isFullyPaid ? "active-paid" : ""}" id="btn-mark-paid" ${paidClickable ? "" : "disabled"}>✅ ชำระแล้ว</button>
+      <button type="button" class="payment-toggle-btn ${!isFullyPaid ? "active-unpaid" : ""}" id="btn-mark-unpaid" ${(!isFullyPaid || !isOwnerOrAdmin) ? "disabled" : ""}>⭕ ยังไม่ชำระ</button>
+      <button type="button" class="payment-toggle-btn ${isFullyPaid ? "active-paid" : ""}" id="btn-mark-paid" ${(!hasPriceSet || isFullyPaid) ? "disabled" : ""}>✅ ชำระแล้ว</button>
     </div>
-    ${isFullyPaid && !canToggle ? `<div class="readonly-note">หากกดผิด ให้เจ้าของร้านหรือผู้ดูแลระบบแก้ไขให้</div>` : ""}
     ${balanceHtml}
     ${transactionsHtml}
   `;
 
-  if (paidClickable) {
+  if (hasPriceSet && !isFullyPaid) {
     document.getElementById("btn-mark-paid").addEventListener("click", preventDoubleSubmit(async () => {
       try {
         await recordPayment({
@@ -1028,18 +1064,16 @@ function renderPaymentSection(job, transactions, totalPaid, balance, isFullyPaid
     }));
   }
 
-  if (unpaidClickable) {
+  if (isFullyPaid && isOwnerOrAdmin) {
     document.getElementById("btn-mark-unpaid").addEventListener("click", preventDoubleSubmit(async () => {
       const result = await showConfirmDialog({
-        text: "ยกเลิกรายการชำระเงิน กลับไปเป็น \"ยังไม่ชำระ\" ใช่หรือไม่?",
+        text: "กดผิดใช่หรือไม่? ต้องการย้อนกลับเป็น \"ยังไม่ชำระ\" ใช่หรือไม่? (ระบบจะยกเลิกประวัติการรับเงินที่ยังไม่ถูกยกเลิกทั้งหมด)",
         requireReason: true,
         confirmLabel: "ยืนยันย้อนกลับ",
       });
       if (!result.confirmed) return;
-
       try {
-        const unvoidedTx = transactions.filter((tx) => !tx.is_voided);
-        for (const tx of unvoidedTx) {
+        for (const tx of activeTransactions) {
           await voidPayment({ accessToken: getAccessToken(), transactionId: tx.id, voidReason: result.reason });
         }
         showToast("ย้อนกลับสำเร็จ", "success");
@@ -1052,8 +1086,8 @@ function renderPaymentSection(job, transactions, totalPaid, balance, isFullyPaid
   }
 }
 
-function renderPaymentTxCardHtml() {
-  return (tx) => `
+function renderPaymentTxCardHtml(tx) {
+  return `
     <div class="payment-tx-card ${tx.is_voided ? "voided" : ""}">
       <div class="payment-tx-top">
         <span class="payment-tx-amount ${tx.transaction_type}">${tx.transaction_type === "refund" ? "-" : "+"}${tx.amount.toLocaleString()} บาท</span>
@@ -1072,7 +1106,7 @@ function renderPaymentTxCardHtml() {
 }
 
 // ============================================================================
-// Status Buttons (อยู่เหนือการชำระเงิน)
+// Status Buttons
 // ============================================================================
 function renderStatusButtons(job, balance) {
   const container = document.getElementById("status-buttons");
@@ -1133,7 +1167,6 @@ function renderStatusButtons(job, balance) {
     return;
   }
 
-  // simplified === "received" (ครอบคลุม pending_confirmation / waiting / in_progress)
   if (job.status === "pending_confirmation") {
     container.innerHTML = `<div class="readonly-note">กรุณายืนยันรับงานในส่วนด้านบนก่อน จึงจะเปลี่ยนสถานะต่อได้</div>`;
     return;
@@ -1176,14 +1209,9 @@ function renderStatusButtons(job, balance) {
   }));
 }
 
-// ============================================================================
-// ปิด Modal — รีเฟรชข้อมูลหน้าหลักให้อัตโนมัติเสมอ ไม่ว่าจะกดปิดแบบไหนก็ตาม
-// (แก้ปัญหาที่ผู้ใช้ต้องคอยกดปุ่ม 🔄 เองถึงจะเห็นข้อมูลอัปเดต)
-// ============================================================================
 function closeJobModal() {
   document.getElementById("job-modal-backdrop").classList.add("hidden");
   state.currentJobId = null;
-  refreshJobs(); // ทำงานเบื้องหลัง ไม่บล็อกการปิดหน้าต่าง
 }
 document.getElementById("job-modal-backdrop").addEventListener("click", (e) => {
   if (e.target.id === "job-modal-backdrop") closeJobModal();
