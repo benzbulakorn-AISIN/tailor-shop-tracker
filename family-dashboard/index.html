@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
 <title>ระบบติดตามงาน ร้านเย็บผ้าณัฏฐา</title>
 <style>
   :root {
@@ -30,7 +30,8 @@
     font-family: "Noto Sans Thai", -apple-system, "Segoe UI", sans-serif;
     background: var(--bg);
     color: var(--text);
-    padding-bottom: 40px;
+    padding-bottom: calc(40px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
   }
   .hidden { display: none !important; }
   .container { max-width: 720px; margin: 0 auto; padding: 12px; }
@@ -137,7 +138,7 @@
   }
   .summary-card:active { transform: scale(0.97); }
   .summary-card.active { border-color: var(--primary); }
-  .summary-grid:not(.summary-grid-sub) .summary-card {
+  .summary-grid-main > .summary-card {
     flex-direction: row;
     justify-content: flex-start;
     text-align: left;
@@ -145,11 +146,11 @@
     padding: 18px 20px;
   }
   .summary-card .count { font-size: 2rem; font-weight: 800; line-height: 1; }
-  .summary-grid:not(.summary-grid-sub) .summary-card .count { font-size: 2.4rem; }
+  .summary-grid-main .summary-card .count { font-size: 2.4rem; }
   .summary-card .label { font-size: 0.95rem; color: var(--text-muted); margin-top: 2px; font-weight: 600; }
-  .summary-grid:not(.summary-grid-sub) .summary-card .label { font-size: 1.15rem; margin-top: 0; }
+  .summary-grid-main .summary-card .label { font-size: 1.15rem; margin-top: 0; }
   .summary-card .icon { font-size: 1.6rem; }
-  .summary-grid:not(.summary-grid-sub) .summary-card .icon { font-size: 2.2rem; }
+  .summary-grid-main .summary-card .icon { font-size: 2.2rem; }
   /* สีพื้นหลังตามความเร่งด่วน เพื่อให้เห็นชัดตั้งแต่แรกว่าเรื่องไหนด่วนกว่ากัน */
   .summary-card.tone-red { background: var(--urgent-red-bg); }
   .summary-card.tone-red .count,
@@ -678,6 +679,25 @@
     margin-bottom: 14px;
     font-family: inherit;
   }
+
+  /* ===== แก้การแสดงผลบนมือถือ (ข้อความล้น/โดนบัง) ===== */
+  .summary-wrap { min-width: 0; margin: 14px 0; }
+  .summary-grid > .summary-card { min-width: 0; }
+  .summary-grid.summary-grid-sub { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .summary-grid-sub .summary-card { padding: 14px 6px; gap: 4px; }
+  .summary-grid-sub .summary-card .label { font-size: 0.9rem; line-height: 1.35; word-break: keep-all; }
+  .summary-grid-sub .summary-card .count { font-size: 2rem; }
+  .app-header { gap: 8px; padding: 10px 12px; }
+  .app-header .title { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .app-header > div:last-child { flex-shrink: 0; min-width: 0; }
+  .app-header .user-info-text { white-space: nowrap; }
+  @media (max-width: 480px) {
+    .app-header .title { font-size: 1.05rem; }
+    .app-header .user-info { font-size: 0.8rem; }
+    #header-user-role, .app-header .user-info-text br { display: none; }
+    .app-header button.icon-btn { padding: 8px 10px; margin-left: 6px; min-height: 44px; }
+    .summary-grid-main > .summary-card { padding: 14px 16px; }
+  }
 </style>
 </head>
 <body>
@@ -722,7 +742,7 @@
   </div>
   <div id="offline-banner" class="offline-banner hidden">📶 ไม่มีสัญญาณอินเทอร์เน็ต ข้อมูลอาจไม่เป็นปัจจุบัน</div>
   <div class="container">
-    <div class="summary-grid" id="summary-grid"></div>
+    <div class="summary-wrap" id="summary-grid"></div>
     <div class="toolbar">
       <input type="text" id="search-input" placeholder="🔍 ค้นหาชื่อ เบอร์โทร หรือเลขงาน" />
       <button class="toolbar-toggle" id="btn-toggle-filters">ตัวกรองเพิ่มเติม ▾</button>

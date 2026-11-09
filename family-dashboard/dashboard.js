@@ -355,7 +355,7 @@ function renderSummaryCards() {
   urgentTitle.className = "summary-group-title";
   urgentTitle.textContent = "📌 ต้องดูวันนี้";
   const urgentGrid = document.createElement("div");
-  urgentGrid.className = "summary-grid";
+  urgentGrid.className = "summary-grid summary-grid-main";
   CARD_DEFINITIONS.filter((d) => d.group === "urgent").forEach((def) => {
     urgentGrid.appendChild(buildSummaryCard(def, cardData));
   });
