@@ -17,7 +17,12 @@
     --text-muted: #5f6368;
     --border: #dadce0;
     --bg: #f4f6f8;
-    font-size: 16px;
+    --urgent-red-bg: #fdeaea;
+    --urgent-blue-bg: #e8f0fe;
+    --urgent-orange-bg: #fff3e0;
+    --neutral-bg: #ffffff;
+    --ready-green-bg: #e6f4ea;
+    font-size: 18px; /* ขยายขนาดตัวอักษรพื้นฐานทั้งระบบเพื่อให้อ่านง่ายขึ้นสำหรับผู้สูงอายุ */
   }
   * { box-sizing: border-box; }
   body {
@@ -29,7 +34,6 @@
   }
   .hidden { display: none !important; }
   .container { max-width: 720px; margin: 0 auto; padding: 12px; }
-
   /* ---------------- Header ---------------- */
   .app-header {
     background: var(--primary);
@@ -49,12 +53,15 @@
     background: rgba(255,255,255,0.2);
     border: none;
     color: #fff;
-    border-radius: 10px;
-    padding: 8px 12px;
-    font-size: 0.9rem;
+    border-radius: 12px;
+    padding: 10px 14px;
+    min-height: 48px;
+    font-size: 1rem;
+    font-weight: 700;
     cursor: pointer;
     margin-left: 8px;
   }
+  .app-header button.icon-btn:active { transform: scale(0.96); }
   .notif-failed-badge {
     position: relative;
     background: rgba(255,255,255,0.25);
@@ -93,28 +100,70 @@
     padding: 8px;
     font-size: 0.9rem;
   }
-
   /* ---------------- Cards (Summary) ---------------- */
+  /* จัดกลุ่มการ์ดสรุปเป็น 2 ชุด: "ต้องดูวันนี้" (ใหญ่ เด่น) และ "กำลังจะถึง" (เล็กกว่า)
+     เพื่อให้ผู้สูงอายุเห็นสิ่งที่ต้องรีบทำก่อน โดยไม่ต้องอ่านครบทั้ง 6 การ์ดเท่ากัน */
+  .summary-group-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    margin: 16px 2px 8px;
+    color: var(--text);
+  }
+  .summary-group-title:first-child { margin-top: 2px; }
   .summary-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 0 0 14px;
+  }
+  .summary-grid.summary-grid-sub {
+    grid-template-columns: repeat(3, 1fr);
     gap: 10px;
-    margin: 14px 0;
   }
   .summary-card {
     background: #fff;
     border-radius: 16px;
-    padding: 14px;
+    padding: 16px;
     text-align: center;
     cursor: pointer;
-    border: 2px solid transparent;
+    border: 3px solid transparent;
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    min-height: 88px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.08s;
   }
+  .summary-card:active { transform: scale(0.97); }
   .summary-card.active { border-color: var(--primary); }
-  .summary-card .count { font-size: 1.8rem; font-weight: 800; }
-  .summary-card .label { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
-  .summary-card .icon { font-size: 1.4rem; }
-
+  .summary-grid:not(.summary-grid-sub) .summary-card {
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+    gap: 14px;
+    padding: 18px 20px;
+  }
+  .summary-card .count { font-size: 2rem; font-weight: 800; line-height: 1; }
+  .summary-grid:not(.summary-grid-sub) .summary-card .count { font-size: 2.4rem; }
+  .summary-card .label { font-size: 0.95rem; color: var(--text-muted); margin-top: 2px; font-weight: 600; }
+  .summary-grid:not(.summary-grid-sub) .summary-card .label { font-size: 1.15rem; margin-top: 0; }
+  .summary-card .icon { font-size: 1.6rem; }
+  .summary-grid:not(.summary-grid-sub) .summary-card .icon { font-size: 2.2rem; }
+  /* สีพื้นหลังตามความเร่งด่วน เพื่อให้เห็นชัดตั้งแต่แรกว่าเรื่องไหนด่วนกว่ากัน */
+  .summary-card.tone-red { background: var(--urgent-red-bg); }
+  .summary-card.tone-red .count,
+  .summary-card.tone-red .label { color: var(--danger); }
+  .summary-card.tone-blue { background: var(--urgent-blue-bg); }
+  .summary-card.tone-blue .count,
+  .summary-card.tone-blue .label { color: var(--primary-dark); }
+  .summary-card.tone-orange { background: var(--urgent-orange-bg); }
+  .summary-card.tone-orange .count,
+  .summary-card.tone-orange .label { color: #c25e00; }
+  .summary-card.tone-green { background: var(--ready-green-bg); }
+  .summary-card.tone-green .count,
+  .summary-card.tone-green .label { color: var(--success); }
+  .summary-card.tone-neutral { background: #fff; }
   /* ---------------- Search / Filters ---------------- */
   .toolbar {
     background: #fff;
@@ -125,8 +174,9 @@
   }
   .toolbar input[type="text"], .toolbar select, .toolbar input[type="date"] {
     width: 100%;
-    font-size: 1rem;
-    padding: 12px;
+    font-size: 1.1rem;
+    padding: 14px;
+    min-height: 54px;
     border-radius: 12px;
     border: 2px solid var(--border);
     margin-bottom: 10px;
@@ -137,22 +187,25 @@
     border: none;
     color: var(--primary);
     font-weight: 700;
+    font-size: 1.05rem;
     cursor: pointer;
-    padding: 6px 0;
+    padding: 10px 0;
+    min-height: 44px;
   }
   .show-picked-up-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 2px 2px 2px;
-    font-size: 0.9rem;
-    color: var(--text-muted);
+    padding: 12px 2px 2px 2px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text);
   }
   .switch {
     position: relative;
     display: inline-block;
-    width: 44px;
-    height: 26px;
+    width: 56px;
+    height: 32px;
     flex-shrink: 0;
   }
   .switch input { opacity: 0; width: 0; height: 0; }
@@ -167,15 +220,14 @@
   .switch-slider::before {
     position: absolute;
     content: "";
-    height: 20px; width: 20px;
+    height: 26px; width: 26px;
     left: 3px; bottom: 3px;
     background-color: #fff;
     border-radius: 50%;
     transition: 0.2s;
   }
   .switch input:checked + .switch-slider { background-color: var(--primary); }
-  .switch input:checked + .switch-slider::before { transform: translateX(18px); }
-
+  .switch input:checked + .switch-slider::before { transform: translateX(24px); }
   /* ---------------- Calendar ---------------- */
   .calendar-card {
     background: #fff;
@@ -194,36 +246,68 @@
   .calendar-header button {
     background: #f1f3f4;
     border: none;
-    border-radius: 10px;
-    padding: 8px 14px;
-    font-size: 1rem;
+    border-radius: 12px;
+    padding: 12px 18px;
+    min-height: 48px;
+    font-size: 1.05rem;
+    font-weight: 700;
     cursor: pointer;
   }
+  .calendar-header button:active { transform: scale(0.96); }
   .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
+    gap: 5px;
     text-align: center;
   }
-  .calendar-weekday { font-size: 0.75rem; color: var(--text-muted); padding: 4px 0; }
+  .calendar-weekday { font-size: 0.85rem; font-weight: 700; color: var(--text-muted); padding: 4px 0; }
   .calendar-cell {
     aspect-ratio: 1;
-    border-radius: 10px;
+    border-radius: 12px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    font-size: 0.85rem;
+    font-size: 1rem;
+    font-weight: 600;
     cursor: pointer;
     background: #f8f9fa;
+    position: relative;
+    border: 2px solid transparent;
+    min-height: 44px;
   }
   .calendar-cell.empty { background: transparent; cursor: default; }
-  .calendar-cell.today { border: 2px solid var(--primary); font-weight: 800; }
-  .calendar-cell.has-jobs { background: #e8f0fe; }
+  .calendar-cell.today { border-color: var(--primary); font-weight: 800; }
+  .calendar-cell.has-jobs { background: var(--urgent-blue-bg); }
+  /* วันที่มีงานเลยกำหนดอยู่ ให้เด่นเป็นสีแดงทันที มองเห็นง่ายกว่าปฏิทินเปล่า */
+  .calendar-cell.has-jobs-late { background: var(--urgent-red-bg); }
   .calendar-cell.selected { background: var(--primary); color: #fff; }
-  .calendar-cell .dot-count { font-size: 0.65rem; color: var(--primary-dark); }
-  .calendar-cell.selected .dot-count { color: #fff; }
-
+  .calendar-cell .dot-count {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 20px;
+    height: 20px;
+    line-height: 20px;
+    border-radius: 999px;
+    background: var(--primary-dark);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 0 4px;
+  }
+  .calendar-cell.has-jobs-late .dot-count { background: var(--danger); }
+  .calendar-cell.selected .dot-count { background: #fff; color: var(--primary-dark); }
+  .calendar-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+  .calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .calendar-legend .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
   /* ---------------- Job List ---------------- */
   .job-list-header {
     display: flex;
@@ -236,12 +320,14 @@
   .job-card {
     background: #fff;
     border-radius: 14px;
-    padding: 14px;
-    margin-bottom: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     cursor: pointer;
     position: relative;
+    border-left: 6px solid var(--border);
   }
+  .job-card:active { transform: scale(0.99); }
   .job-card-top {
     display: flex;
     justify-content: space-between;
@@ -249,15 +335,15 @@
     gap: 8px;
     padding-right: 42px;
   }
-  .job-card .job-number { font-weight: 700; font-size: 1.05rem; }
-  .job-card .customer-name { color: var(--text-muted); font-size: 0.9rem; margin-top: 2px; }
+  .job-card .job-number { font-weight: 700; font-size: 1.15rem; }
+  .job-card .customer-name { color: var(--text-muted); font-size: 1.05rem; font-weight: 600; margin-top: 2px; }
   .status-badge {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 4px 10px;
+    padding: 5px 12px;
     border-radius: 999px;
-    font-size: 0.8rem;
+    font-size: 0.9rem;
     font-weight: 700;
     color: #fff;
     white-space: nowrap;
@@ -267,7 +353,7 @@
     flex-wrap: wrap;
     gap: 10px;
     margin-top: 8px;
-    font-size: 0.85rem;
+    font-size: 0.95rem;
     color: var(--text-muted);
   }
   .urgent-tag {
@@ -292,7 +378,6 @@
     font-size: 1.1rem;
     text-decoration: none;
   }
-
   /* ---------------- States ---------------- */
   .center-screen {
     display: flex;
@@ -312,7 +397,6 @@
     margin-bottom: 14px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
   /* ---------------- Login Screen ---------------- */
   .login-card {
     background: #fff;
@@ -363,7 +447,6 @@
     margin: 16px 0;
   }
   label.checkbox-row { display:flex; align-items:center; gap:8px; font-size:1rem; margin-bottom:16px; }
-
   /* ---------------- Buttons ---------------- */
   .btn {
     display: block;
@@ -402,7 +485,6 @@
     margin-bottom: 10px;
   }
   .quick-percent-row .btn { margin-bottom: 0; padding: 12px; font-size: 0.95rem; }
-
   /* ---------------- Status Stepper (3 ขั้นหลัก) ---------------- */
   .status-stepper {
     display: flex;
@@ -428,7 +510,6 @@
     font-weight: 700;
     margin: 10px 0 16px 0;
   }
-
   /* ---------------- Payment Toggle Pills (ยังไม่ชำระ / ชำระแล้ว) ---------------- */
   .payment-toggle-row {
     display: grid;
@@ -461,7 +542,6 @@
     cursor: default;
     opacity: 0.85;
   }
-
   /* ---------------- Modal (Job Detail) ---------------- */
   .modal-backdrop {
     position: fixed; inset: 0;
@@ -486,9 +566,11 @@
     float: right;
     background: #f1f3f4;
     border: none;
-    border-radius: 50%;
-    width: 36px; height: 36px;
-    font-size: 1.1rem;
+    border-radius: 999px;
+    min-width: 44px; height: 44px;
+    padding: 0 16px;
+    font-size: 1.05rem;
+    font-weight: 700;
     cursor: pointer;
   }
   .modal-section {
@@ -540,7 +622,6 @@
     color: var(--text-muted);
     margin-bottom: 10px;
   }
-
   /* ---------------- Payment History (ledger) ---------------- */
   .payment-tx-card {
     background: #f8f9fa;
@@ -570,7 +651,6 @@
   }
   .balance-box .amount { font-size: 1.6rem; font-weight: 800; color: var(--primary-dark); }
   .balance-box .caption { font-size: 0.85rem; color: var(--text-muted); }
-
   /* ---------------- Confirm Dialog ---------------- */
   .confirm-dialog-backdrop {
     position: fixed; inset: 0;
@@ -601,13 +681,11 @@
 </style>
 </head>
 <body>
-
 <!-- ======================== Loading Screen ======================== -->
 <div id="screen-loading" class="center-screen">
   <div class="spinner"></div>
   <p>กำลังเตรียมระบบ...</p>
 </div>
-
 <!-- ======================== Login Screen ======================== -->
 <div id="screen-login" class="container hidden">
   <div class="login-card">
@@ -627,7 +705,6 @@
     </div>
   </div>
 </div>
-
 <!-- ======================== Main Dashboard ======================== -->
 <div id="screen-dashboard" class="hidden">
   <div class="app-header">
@@ -643,12 +720,9 @@
       <button class="icon-btn" id="btn-logout">ออก</button>
     </div>
   </div>
-
   <div id="offline-banner" class="offline-banner hidden">📶 ไม่มีสัญญาณอินเทอร์เน็ต ข้อมูลอาจไม่เป็นปัจจุบัน</div>
-
   <div class="container">
     <div class="summary-grid" id="summary-grid"></div>
-
     <div class="toolbar">
       <input type="text" id="search-input" placeholder="🔍 ค้นหาชื่อ เบอร์โทร หรือเลขงาน" />
       <button class="toolbar-toggle" id="btn-toggle-filters">ตัวกรองเพิ่มเติม ▾</button>
@@ -680,7 +754,6 @@
         </label>
       </div>
     </div>
-
     <div class="calendar-card">
       <div class="calendar-header">
         <button id="btn-cal-prev">◀</button>
@@ -689,24 +762,27 @@
       </div>
       <div class="calendar-grid" id="calendar-weekdays"></div>
       <div class="calendar-grid" id="calendar-grid" style="margin-top:4px;"></div>
+      <div class="calendar-legend">
+        <span><span class="dot" style="background:var(--primary-dark)"></span>ตัวเลข = จำนวนงานวันนั้น</span>
+        <span><span class="dot" style="background:var(--danger)"></span>มีงานเลยกำหนด</span>
+      </div>
     </div>
-
     <div class="job-list-header" id="job-list-anchor">
       <span>รายการงาน (<span id="job-count">0</span>)</span>
     </div>
     <div id="job-list"></div>
     <div id="job-list-empty" class="center-screen hidden">
-      <p style="font-size:2.5rem;">📭</p>
-      <p>ไม่พบงานที่ตรงกับเงื่อนไข</p>
+      <p style="font-size:2.8rem;">📭</p>
+      <p style="font-size:1.1rem;font-weight:700;">ไม่พบงานที่ตรงกับเงื่อนไขนี้ค่ะ</p>
+      <p style="color:var(--text-muted);">ลองกดวันอื่นในปฏิทิน หรือล้างตัวกรองเพื่อดูงานทั้งหมดอีกครั้ง</p>
+      <button class="btn btn-secondary" id="btn-clear-filters-empty" style="margin-top:10px;max-width:280px;">📋 ล้างตัวกรอง ดูงานทั้งหมด</button>
     </div>
   </div>
 </div>
-
 <!-- ======================== Job Detail Modal ======================== -->
 <div id="job-modal-backdrop" class="modal-backdrop hidden">
   <div class="modal-sheet" id="job-modal-sheet"></div>
 </div>
-
 <!-- ======================== Confirm Dialog (generic) ======================== -->
 <div id="confirm-dialog-backdrop" class="confirm-dialog-backdrop hidden">
   <div class="confirm-dialog">
@@ -718,7 +794,6 @@
     </div>
   </div>
 </div>
-
 <script type="module" src="./dashboard.js"></script>
 </body>
 </html>
