@@ -6,18 +6,17 @@
 <title>ติดตามสถานะงาน</title>
 <style>
   :root {
-    --primary: #1a73e8;
-    --primary-dark: #0d47a1;
+    --primary: #1b2a49;
+    --primary-soft: #e3e9f5;
     --success: #1e8e3e;
-    --danger: #d93025;
+    --danger: #c5221f;
     --warning: #f9a825;
-    --purple: #8e24aa;
     --grey: #5f6368;
     --text: #202124;
     --text-muted: #5f6368;
-    --border: #dadce0;
-    --bg: #f4f6f8;
-    font-size: 17px;
+    --border: #c9d1e0;
+    --bg: #faf6ee;
+    font-size: 18px;
   }
   * { box-sizing: border-box; }
   body {
@@ -39,79 +38,127 @@
   }
   .card {
     background: #fff;
-    border-radius: 16px;
-    padding: 16px;
-    margin-bottom: 14px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    border-radius: 20px;
+    padding: 18px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(27, 42, 73, 0.10);
   }
   .job-card-top {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 8px;
+    flex-wrap: wrap;
   }
-  .job-number { font-weight: 800; font-size: 1.15rem; }
+  .job-number { font-weight: 800; font-size: 1.2rem; word-break: break-word; min-width: 0; }
   .status-badge {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 5px 12px;
+    padding: 6px 14px;
     border-radius: 999px;
-    font-size: 0.85rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: #fff;
     white-space: nowrap;
   }
-  .info-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 0.95rem; gap: 10px; border-bottom: 1px solid #f1f3f4; }
+  /* แถบความคืบหน้า 3 ขั้น: รับเข้าระบบ -> เสร็จแล้ว -> รับแล้ว (ใช้ไอคอน + ข้อความ ไม่ใช้สีอย่างเดียว) */
+  .stepper { display: flex; gap: 6px; margin: 14px 0 6px 0; }
+  .stepper-item {
+    flex: 1;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: #f1f3f4;
+    border-radius: 12px;
+    padding: 8px 4px;
+    line-height: 1.3;
+  }
+  .stepper-item .stepper-icon { font-size: 1.3rem; margin-bottom: 2px; }
+  .stepper-item.done { background: #e6f4ea; color: var(--success); }
+  .stepper-item.active { background: var(--primary-soft); color: var(--primary); box-shadow: inset 0 0 0 2px var(--primary); }
+  .cancelled-box {
+    margin-top: 14px;
+    background: #fdecea;
+    color: var(--danger);
+    font-weight: 700;
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 9px 0;
+    font-size: 1rem;
+    gap: 12px;
+    border-bottom: 1px solid #eceff4;
+  }
   .info-row:last-child { border-bottom: none; }
   .info-row .label { color: var(--text-muted); white-space: nowrap; }
-  .info-row .value { text-align: right; font-weight: 600; }
-  .section-title { font-size: 1rem; font-weight: 700; margin: 14px 0 8px 0; }
+  .info-row .value { text-align: right; font-weight: 600; word-break: break-word; min-width: 0; }
+  .section-title { font-size: 1.05rem; font-weight: 700; margin: 16px 0 8px 0; }
   .photo-grid-view {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     margin-bottom: 8px;
   }
-  .photo-grid-view img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; }
+  .photo-grid-view img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; }
   .balance-box {
-    background: #e8f0fe;
-    border-radius: 12px;
+    background: var(--primary-soft);
+    border-radius: 14px;
     padding: 14px;
     text-align: center;
     margin: 10px 0;
   }
-  .balance-box .amount { font-size: 1.5rem; font-weight: 800; color: var(--primary-dark); }
-  .balance-box .caption { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
-  .warning-box {
-    background: #fff8e1;
-    border: 1px solid var(--warning);
-    border-radius: 12px;
-    padding: 10px 12px;
-    font-size: 0.88rem;
-    margin-bottom: 10px;
+  .balance-box.is-paid { background: #e6f4ea; }
+  .balance-box .amount { font-size: 1.6rem; font-weight: 800; color: var(--primary); }
+  .balance-box.is-paid .amount { color: var(--success); }
+  .balance-box .caption { font-size: 0.95rem; color: var(--text-muted); margin-top: 2px; }
+  .pickup-box {
+    background: #e6f4ea;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 14px 0 4px 0;
+    font-weight: 700;
+    font-size: 1.1rem;
+    line-height: 1.5;
+  }
+  details.history { margin-top: 12px; }
+  details.history summary {
+    font-weight: 700;
+    font-size: 1.05rem;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
   }
   .timeline-item {
     display: flex;
     gap: 10px;
-    padding: 6px 0;
-    font-size: 0.88rem;
+    padding: 7px 0;
+    font-size: 0.95rem;
     color: var(--text-muted);
   }
-  .timeline-item .icon { font-size: 1.1rem; }
+  .timeline-item .icon { font-size: 1.15rem; }
   .btn {
     display: block;
     width: 100%;
-    padding: 15px;
-    font-size: 1.05rem;
+    min-height: 56px;
+    padding: 14px 16px;
+    font-size: 1.1rem;
     font-weight: 700;
-    border-radius: 14px;
+    border-radius: 16px;
     border: none;
     cursor: pointer;
     text-align: center;
     text-decoration: none;
+    line-height: 1.3;
+    font-family: inherit;
   }
   .btn-secondary { background: #fff; color: var(--primary); border: 2px solid var(--primary); }
+  .btn:focus-visible, summary:focus-visible { outline: 4px solid #f4b400; outline-offset: 2px; }
   .center-screen {
     display: flex;
     flex-direction: column;
@@ -130,21 +177,7 @@
     margin-bottom: 16px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .job-list-header {
-    font-weight: 700;
-    margin: 4px 2px 10px 2px;
-  }
-  .pickup-box {
-    background: #e6f4ea;
-    border-radius: 12px;
-    padding: 12px 14px;
-    margin: 12px 0 4px 0;
-    font-weight: 700;
-    font-size: 1.05rem;
-    line-height: 1.5;
-  }
-  .btn:focus-visible { outline: 4px solid #f4b400; outline-offset: 2px; }
-  .info-row .value { word-break: break-word; min-width: 0; }
+  .job-list-header { font-weight: 700; font-size: 1.1rem; margin: 4px 2px 12px 2px; }
   @media (prefers-reduced-motion: reduce) {
     .spinner { animation-duration: 3s; }
   }
@@ -164,15 +197,15 @@
 <div id="screen-error" class="center-screen hidden">
   <p style="font-size:3rem;">⚠️</p>
   <p id="error-message" role="alert">เกิดข้อผิดพลาด</p>
-  <button class="btn btn-secondary" style="margin-top:16px;max-width:240px;" onclick="location.reload()">ลองใหม่อีกครั้ง</button>
+  <button class="btn btn-secondary" style="margin-top:16px;max-width:260px;" onclick="location.reload()">🔄 ลองใหม่อีกครั้ง</button>
 </div>
 
 <!-- ======================== Empty Screen ======================== -->
 <div id="screen-empty" class="center-screen hidden">
   <p style="font-size:3rem;">📭</p>
   <p>ยังไม่พบงานที่ฝากไว้กับร้าน</p>
-  <p style="color:var(--text-muted);font-size:0.9rem;">หากเพิ่งฝากงาน กรุณารอสักครู่แล้วลองเปิดหน้านี้ใหม่</p>
-  <a class="btn btn-secondary" style="margin-top:16px;max-width:240px;" href="tel:0822352942">📞 โทรติดต่อร้าน</a>
+  <p style="color:var(--text-muted);font-size:1rem;">หากเพิ่งฝากงาน กรุณารอสักครู่แล้วลองเปิดหน้านี้ใหม่</p>
+  <a class="btn btn-secondary" style="margin-top:16px;max-width:260px;" href="tel:0822352942">📞 โทรติดต่อร้าน</a>
 </div>
 
 <!-- ======================== Job List ======================== -->
@@ -189,7 +222,7 @@
   import { formatThaiDate, formatThaiDateTime, escapeHtml, toFriendlyErrorMessage } from "../shared/utils.js";
 
   // ----------------------------------------------------------------------------
-  // Simplified Status Display (3 ระดับหลัก + ยกเลิก — ตรงกับฝั่ง Dashboard ร้าน)
+  // Simplified Status Display (3 ระดับหลัก + ยกเลิก — ชื่อและสีเดียวกับฝั่ง Dashboard ร้าน)
   // สถานะจริงในฐานข้อมูลยังมีครบ 6 ค่าเหมือนเดิม นี่คือการ "รวมป้าย" แสดงผลเท่านั้น
   // ----------------------------------------------------------------------------
   function getSimplifiedStatusKey(status) {
@@ -198,21 +231,40 @@
     if (status === "cancelled") return "cancelled";
     return "received"; // pending_confirmation, waiting, in_progress
   }
-
   const SIMPLIFIED_STATUS_DISPLAY = {
-    received: { label: "รับเข้าระบบ", icon: "📋", color: "#1a73e8" },
+    received: { label: "รับเข้าระบบ", icon: "📋", color: "#1b2a49" },
     completed: { label: "เสร็จแล้ว", icon: "✅", color: "#1e8e3e" },
     picked_up: { label: "รับแล้ว", icon: "📦", color: "#5f6368" },
-    cancelled: { label: "ยกเลิก", icon: "🚫", color: "#d93025" },
+    cancelled: { label: "ยกเลิก", icon: "🚫", color: "#c5221f" },
   };
-
   function getStatusDisplay(status) {
     return SIMPLIFIED_STATUS_DISPLAY[getSimplifiedStatusKey(status)];
+  }
+  const STEPPER_SEQUENCE = ["received", "completed", "picked_up"];
+
+  function buildStepperHtml(status) {
+    const key = getSimplifiedStatusKey(status);
+    if (key === "cancelled") {
+      return `<div class="cancelled-box">🚫 งานนี้ถูกยกเลิกแล้ว กรุณาติดต่อร้านหากมีข้อสงสัย</div>`;
+    }
+    const currentIndex = STEPPER_SEQUENCE.indexOf(key);
+    return `
+      <div class="stepper" role="list" aria-label="ความคืบหน้างาน">
+        ${STEPPER_SEQUENCE.map((s, idx) => {
+          const done = idx < currentIndex;
+          const active = idx === currentIndex;
+          const icon = done ? "✅" : (active ? "🔵" : "⚪");
+          return `<div class="stepper-item ${done ? "done" : ""} ${active ? "active" : ""}" role="listitem"${active ? ' aria-current="step"' : ""}>
+            <div class="stepper-icon">${icon}</div>
+            <div>${SIMPLIFIED_STATUS_DISPLAY[s].label}</div>
+          </div>`;
+        }).join("")}
+      </div>`;
   }
 
   const PAYMENT_STATUS_DISPLAY = {
     unpaid: { label: "ยังไม่ชำระ", icon: "⭕" },
-    deposit_paid: { label: "ชำระมัดจำแล้ว", icon: "🔸" },
+    deposit_paid: { label: "ชำระบางส่วนแล้ว", icon: "🔸" },
     paid: { label: "ชำระครบแล้ว", icon: "✅" },
     refunded: { label: "คืนเงินแล้ว", icon: "↩️" },
   };
@@ -248,13 +300,11 @@
     try {
       const liffState = await initLiff("status");
       if (!liffState.isLoggedIn) return; // กำลัง Redirect ไป LINE Login
-
       const identity = await getLineIdentity();
       const result = await identifyCustomer({
         idToken: identity.idToken,
         mockCustomer: identity.mockCustomer,
       });
-
       await loadJobs(result.access_token);
     } catch (err) {
       showError(toFriendlyErrorMessage(err, "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง"));
@@ -263,21 +313,17 @@
 
   async function loadJobs(accessToken) {
     const jobs = await fetchMyJobs({ accessToken });
-
     if (jobs.length === 0) {
       showScreen("empty");
       return;
     }
-
     document.getElementById("job-count").textContent = jobs.length;
     const listEl = document.getElementById("job-list");
     listEl.innerHTML = "";
-
     for (const job of jobs) {
       const card = await renderJobCard(job, accessToken);
       listEl.appendChild(card);
     }
-
     showScreen("list");
   }
 
@@ -288,16 +334,15 @@
     const pickupDate = job.confirmed_pickup_date ?? job.requested_pickup_date;
     const pickupTime = job.confirmed_pickup_time ?? job.requested_pickup_time_slot;
     const isClosed = job.status === "picked_up" || job.status === "cancelled";
-
     const [images, paidTotal, notifications] = await Promise.all([
       fetchMyJobImages({ accessToken, jobId: job.id }),
       fetchMyJobPaidTotal({ accessToken, jobId: job.id }),
       fetchMyJobNotifications({ accessToken, jobId: job.id }),
     ]);
-
-    const balance = job.price_final != null ? job.price_final - paidTotal : null;
+    // ราคาเดียว: ใช้ราคาที่ร้านระบุ (ไม่แสดงราคาประเมิน/เงินมัดจำแล้ว)
+    const totalPrice = job.price_final ?? job.price_estimate;
+    const balance = totalPrice != null ? Math.max(Number(totalPrice) - paidTotal, 0) : null;
     const paymentInfo = PAYMENT_STATUS_DISPLAY[job.payment_status] ?? { label: job.payment_status, icon: "" };
-
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
@@ -305,37 +350,36 @@
         <div class="job-number">${escapeHtml(job.job_number)}</div>
         <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span>
       </div>
-
+      ${buildStepperHtml(job.status)}
+      ${pickupDate && !isClosed ? `<div class="pickup-box" role="status">📅 นัดรับวันที่ ${escapeHtml(formatThaiDate(pickupDate))}${pickupTime ? ` เวลา ${escapeHtml(String(pickupTime).slice(0, 5))} น.` : ""}</div>` : ""}
       ${images.length > 0 ? `
-      <div class="photo-grid-view" style="margin-top:10px;">
+      <div class="photo-grid-view" style="margin-top:12px;">
         ${images.map((img) => `<img src="${escapeHtml(img.signedUrl ?? "")}" alt="รูปงาน" />`).join("")}
       </div>` : ""}
-
       <div class="section-title">ข้อมูลงาน</div>
       <div class="info-row"><span class="label">ประเภทงาน</span><span class="value">${escapeHtml(job.job_types?.label_th ?? job.job_type_other ?? "-")}</span></div>
       <div class="info-row"><span class="label">จำนวน</span><span class="value">${escapeHtml(quantityText)}</span></div>
       ${job.description ? `<div class="info-row"><span class="label">รายละเอียด</span><span class="value">${escapeHtml(job.description)}</span></div>` : ""}
-      <div class="info-row"><span class="label">วันที่ฝากงาน</span><span class="value">${formatThaiDate(job.created_at)}</span></div>
-      ${pickupDate && !isClosed ? `<div class="pickup-box" role="status">📅 นัดรับวันที่ ${escapeHtml(formatThaiDate(pickupDate))}${pickupTime ? ` เวลา ${escapeHtml(pickupTime)} น.` : ""}</div>` : ""}
-
+      <div class="info-row"><span class="label">วันที่ฝากงาน</span><span class="value">${escapeHtml(formatThaiDate(job.created_at))}</span></div>
       <div class="section-title">ราคาและการชำระเงิน</div>
-      <div class="info-row"><span class="label">ราคาประเมิน</span><span class="value">${job.price_estimate != null ? escapeHtml(job.price_estimate.toLocaleString()) + " บาท" : "ยังไม่ระบุ"}</span></div>
-      <div class="info-row"><span class="label">ราคาสรุปจริง</span><span class="value">${job.price_final != null ? escapeHtml(job.price_final.toLocaleString()) + " บาท" : "ยังไม่ระบุ"}</span></div>
-      <div class="info-row"><span class="label">เงินมัดจำที่ต้องการ</span><span class="value">${(job.deposit_amount ?? 0).toLocaleString()} บาท</span></div>
-      <div class="info-row"><span class="label">สถานะการชำระ</span><span class="value">${paymentInfo.icon} ${paymentInfo.label}</span></div>
-      ${balance != null ? `
+      <div class="info-row"><span class="label">ราคา</span><span class="value">${totalPrice != null ? escapeHtml(Number(totalPrice).toLocaleString()) + " บาท" : "ยังไม่ระบุ"}</span></div>
+      <div class="info-row"><span class="label">สถานะการชำระ</span><span class="value">${paymentInfo.icon} ${escapeHtml(paymentInfo.label)}</span></div>
+      ${balance != null ? (balance > 0 ? `
       <div class="balance-box">
-        <div class="amount">${balance.toLocaleString()} บาท</div>
+        <div class="amount">${escapeHtml(balance.toLocaleString())} บาท</div>
         <div class="caption">ยอดคงเหลือ</div>
-      </div>` : ""}
-
+      </div>` : `
+      <div class="balance-box is-paid">
+        <div class="amount">✅ ชำระครบแล้ว</div>
+      </div>`) : ""}
       ${notifications.length > 0 ? `
-      <div class="section-title">ประวัติการแจ้งเตือน</div>
-      ${notifications.map((n) => {
-        const info = NOTIFICATION_LABELS[n.notification_type] ?? { icon: "📨", label: n.notification_type };
-        return `<div class="timeline-item"><span class="icon">${info.icon}</span><span>${info.label} — ${formatThaiDateTime(n.created_at)}</span></div>`;
-      }).join("")}
-      ` : ""}
+      <details class="history">
+        <summary>📨 ประวัติการแจ้งเตือน (${notifications.length})</summary>
+        ${notifications.map((n) => {
+          const info = NOTIFICATION_LABELS[n.notification_type] ?? { icon: "📨", label: n.notification_type };
+          return `<div class="timeline-item"><span class="icon">${info.icon}</span><span>${escapeHtml(info.label)} — ${escapeHtml(formatThaiDateTime(n.created_at))}</span></div>`;
+        }).join("")}
+      </details>` : ""}
     `;
     return card;
   }
