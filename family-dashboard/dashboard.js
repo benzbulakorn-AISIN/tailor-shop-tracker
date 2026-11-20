@@ -1,15 +1,11 @@
 // family-dashboard/dashboard.js
-// Logic หลักของ Family Dashboard — เวอร์ชันลดปุ่มสูงสุดสำหรับผู้สูงอายุ (ต่อเนื่อง)
+// Logic หลักของ Family Dashboard — เวอร์ชันลดปุ่มสูงสุดสำหรับผู้สูงอายุ
 //
-// สรุปการปรับปรุงรอบนี้ (ล่าสุด):
-// 1) ซ่อนงานสถานะ "รับแล้ว" (picked_up) ออกจากรายการเป็นค่าเริ่มต้นอัตโนมัติ
-//    พร้อมสวิตช์เล็กๆ ในแถบตัวกรองให้กดดูย้อนหลังได้ถ้าต้องการ
-// 2) ย้ายการ์ด "LINE ส่งไม่สำเร็จ" ออกจากตารางสรุปใหญ่ ไปเป็นไอคอนกระดิ่งเล็กๆ
-//    ข้างชื่อผู้ใช้ที่ Header แทน (มีตัวเลขนับแจ้งจำนวน) กดแล้วกรองแสดงเฉพาะงาน
-//    ที่มีปัญหา ไม่แสดงไอคอนเลยถ้าไม่มีงานที่มีปัญหา
-//
-// (คงการแก้ไขรอบก่อนหน้าไว้ทั้งหมด: Event Delegation สำหรับแถบ 3 สถานะ,
-// Auto-refresh ทุก 20 วินาที, ปุ่มรวมสำหรับยืนยันรับงาน/ชำระเงิน ฯลฯ)
+// รอบนี้เพิ่ม:
+// 1) Login แบบแป้นกด PIN (สไตล์ iPhone) ผ่าน shared/pin-pad.js — สร้างทับช่องพิมพ์ PIN เดิมจาก
+//    โค้ดไฟล์นี้เอง (ไม่ต้องแก้ index.html) ใช้ loginWithPin()/Session/Remember Device เดิมทุกอย่าง
+// 2) ปุ่ม "↩️ กดผิด เปิดงานกลับ" สำหรับงานที่กด "รับแล้ว/ปิดงาน" ผิด (เฉพาะเจ้าของร้าน/ผู้ดูแลระบบ)
+// (คงการทำงานเดิมของรอบก่อนทั้งหมด)
 import { listLoginIdentities } from "../shared/auth-client.js";
 import {
   initSession, loginWithPin, logout, onSessionChange, getSessionSnapshot, getAccessToken,
@@ -34,6 +30,7 @@ import {
 } from "../shared/job-aggregation.js";
 import { PICKUP_TIME_SLOTS, JOB_TYPES_FALLBACK } from "../shared/job-constants.js";
 import { getSupabaseClient } from "../shared/supabase-client.js";
+import { mountPinPad } from "../shared/pin-pad.js";
 
 // ============================================================================
 // Simplified Status Display (3 ระดับหลัก + ยกเลิก)
@@ -97,7 +94,7 @@ const state = {
 const shopUserMap = new Map();
 
 // Idempotency Key ที่คงที่ต่อ (งาน + ยอด): ถ้าบันทึกเงินสำเร็จแต่เปลี่ยนสถานะไม่สำเร็จ (หรือเน็ตหลุด)
-// แล้วกดใหม่ จะใช้ Key เดิม -> Server ไม่สร้างรายการรับเงินซ้ำ (เดิมสร้าง Key ใหม่ทุกครั้งที่กด)
+// แล้วกดใหม่ จะใช้ Key เดิม -> Server ไม่สร้างรายการรับเงินซ้ำ
 const pendingPaymentKeys = new Map();
 function getStablePaymentKey(jobId, amount) {
   const id = `${jobId}:${amount}`;
@@ -132,16 +129,89 @@ window.addEventListener("online", updateOfflineBanner);
 window.addEventListener("offline", updateOfflineBanner);
 
 // ============================================================================
-// Login Flow
+// Login Flow — แป้นกด PIN แบบ iPhone (ไม่เปิดแป้นพิมพ์มือถือ)
 // ============================================================================
 let selectedShopUserId = null;
+let pinPad = null;
+
+/** เรียกเมื่อกด PIN ครบ 6 หลัก — ใช้ loginWithPin()/Session/Remember Device เดิม ถ้า throw แป้นจะสั่น+ล้างตัวเลข */
+async function attemptPinLogin(pin) {
+  if (!selectedShopUserId) throw new Error("กรุณาเลือกชื่อผู้ใช้ก่อน");
+  if (!isValidPinFormat(pin)) throw new Error("PIN ต้องเป็นตัวเลข 6 หลัก");
+  try {
+    await loginWithPin({
+      shopUserId: selectedShopUserId,
+      pin,
+      rememberDevice: document.getElementById("remember-device-checkbox").checked,
+      deviceLabel: navigator.userAgent.slice(0, 60),
+    });
+  } catch (err) {
+    throw new Error(toFriendlyErrorMessage(err, "PIN ไม่ถูกต้อง กรุณาลองใหม่"));
+  }
+}
+
+/** สร้างแป้นกด PIN ทับช่องพิมพ์ PIN เดิม (ทำครั้งเดียว) — ช่องพิมพ์เดิมถูกซ่อนไว้ ไม่ได้ลบ */
+function ensurePinPad() {
+  if (pinPad) return pinPad;
+  const pinInputEl = document.getElementById("pin-input");
+  const loginBtnEl = document.getElementById("btn-login");
+  const pinSectionEl = document.getElementById("pin-section");
+  const listEl = document.getElementById("identity-list");
+
+  pinInputEl.style.display = "none";
+  pinInputEl.setAttribute("aria-hidden", "true");
+  pinInputEl.tabIndex = -1;
+  loginBtnEl.style.display = "none"; // ไม่ต้องมีปุ่ม "เข้าสู่ระบบ" — ครบ 6 หลักแล้วเข้าเอง
+
+  const mount = document.createElement("div");
+  mount.id = "pin-pad-mount";
+  mount.style.margin = "8px 0 12px";
+  pinInputEl.parentNode.insertBefore(mount, pinInputEl);
+  pinPad = mountPinPad(mount, { length: 6, onComplete: attemptPinLogin });
+
+  // ปุ่มข้อความเล็ก "เปลี่ยนผู้ใช้"
+  const changeBtn = document.createElement("button");
+  changeBtn.type = "button";
+  changeBtn.id = "btn-change-user";
+  changeBtn.textContent = "เปลี่ยนผู้ใช้";
+  changeBtn.setAttribute("aria-label", "เปลี่ยนผู้ใช้");
+  changeBtn.style.cssText =
+    "background:none;border:none;color:#1b2a49;text-decoration:underline;font-size:1rem;font-family:inherit;min-height:44px;padding:8px 4px;cursor:pointer;";
+  changeBtn.addEventListener("click", () => {
+    selectedShopUserId = null;
+    pinSectionEl.classList.add("hidden");
+    listEl.style.display = "";
+    document.querySelectorAll(".identity-btn").forEach((b) => b.classList.remove("selected"));
+    pinPad.reset();
+  });
+  pinSectionEl.insertBefore(changeBtn, pinSectionEl.firstChild);
+
+  // สวิตช์ "จดจำอุปกรณ์": ขยายให้กดง่าย + คำเตือนด้านความปลอดภัย (ค่าเริ่มต้นปิด)
+  const rememberEl = document.getElementById("remember-device-checkbox");
+  rememberEl.style.width = "28px";
+  rememberEl.style.height = "28px";
+  rememberEl.style.flex = "none";
+  const holder = rememberEl.closest("label") ?? rememberEl.parentElement;
+  const hint = document.createElement("div");
+  hint.style.cssText = "font-size:0.9rem;color:#5f6368;margin:4px 0 8px;";
+  hint.textContent = "🔒 เปิดเฉพาะมือถือส่วนตัวของคุณเท่านั้น";
+  holder.insertAdjacentElement("afterend", hint);
+
+  return pinPad;
+}
+
 async function loadIdentities() {
   try {
     const { identities } = await listLoginIdentities();
     const sortedIdentities = sortIdentitiesForLogin(identities);
     const listEl = document.getElementById("identity-list");
     const pinSectionEl = document.getElementById("pin-section");
+    ensurePinPad();
     listEl.innerHTML = "";
+    listEl.style.display = "";
+    selectedShopUserId = null;
+    pinSectionEl.classList.add("hidden");
+    pinPad.reset();
     sortedIdentities.forEach((identity) => {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -152,8 +222,9 @@ async function loadIdentities() {
         document.getElementById("selected-name").textContent = buildIdentityDisplayLabel(identity);
         document.querySelectorAll(".identity-btn").forEach((b) => b.classList.remove("selected"));
         btn.classList.add("selected");
+        listEl.style.display = "none"; // แสดงเฉพาะชื่อที่เลือก + ปุ่ม "เปลี่ยนผู้ใช้"
         pinSectionEl.classList.remove("hidden");
-        document.getElementById("pin-input").focus();
+        pinPad.reset();
       });
       listEl.appendChild(btn);
     });
@@ -161,9 +232,10 @@ async function loadIdentities() {
     showToast(toFriendlyErrorMessage(err), "error");
   }
 }
+
+// (คงไว้เพื่อ Compatibility: ปุ่ม/ช่องพิมพ์ PIN เดิมถูกซ่อนแล้ว แต่ยังผูก Event ไว้เหมือนเดิม)
 const handleLogin = preventDoubleSubmit(async () => {
   const pinInput = document.getElementById("pin-input");
-  const loginBtn = document.getElementById("btn-login");
   const pin = pinInput.value.trim();
   if (!selectedShopUserId) {
     showToast("กรุณาเลือกชื่อผู้ใช้ก่อน", "error");
@@ -173,19 +245,11 @@ const handleLogin = preventDoubleSubmit(async () => {
     showToast("PIN ต้องเป็นตัวเลข 6 หลัก", "error");
     return;
   }
-  loginBtn.disabled = true;
   try {
-    await loginWithPin({
-      shopUserId: selectedShopUserId,
-      pin,
-      rememberDevice: document.getElementById("remember-device-checkbox").checked,
-      deviceLabel: navigator.userAgent.slice(0, 60),
-    });
+    await attemptPinLogin(pin);
     pinInput.value = "";
   } catch (err) {
-    showToast(toFriendlyErrorMessage(err), "error");
-  } finally {
-    loginBtn.disabled = false;
+    showToast(err.message, "error");
   }
 });
 document.getElementById("btn-login").addEventListener("click", handleLogin);
@@ -236,6 +300,7 @@ async function loadDashboardData() {
     showToast(err.message || "โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
   }
 }
+
 async function loadJobTypes(token) {
   try {
     const supabase = getSupabaseClient(token);
@@ -254,6 +319,7 @@ async function loadJobTypes(token) {
   state.jobTypes = JOB_TYPES_FALLBACK.map((jt, idx) => ({ id: null, ...jt, sort_order: idx }));
   return state.jobTypes;
 }
+
 async function refreshJobs() {
   const token = getAccessToken();
   try {
@@ -267,15 +333,14 @@ async function refreshJobs() {
     showToast(err.message || "โหลดรายการงานไม่สำเร็จ", "error");
   }
 }
+
 document.getElementById("btn-refresh").addEventListener("click", preventDoubleSubmit(async () => {
   await refreshJobs();
   showToast("รีเฟรชข้อมูลสำเร็จ", "success");
 }));
 
 // ============================================================================
-// Auto-refresh อัตโนมัติ (ทุก 20 วินาที) เพื่อให้เห็นงานใหม่จากลูกค้าทันที
-// โดยไม่ต้องกดปุ่ม 🔄 เอง — จะไม่รีเฟรชถ้ามีหน้าต่างรายละเอียดงานเปิดอยู่
-// เพื่อไม่ให้ข้อมูลที่กำลังกรอก/ดูอยู่เปลี่ยนแปลงกลางคัน
+// Auto-refresh อัตโนมัติ (ทุก 20 วินาที) — ไม่รีเฟรชถ้ามีหน้าต่างรายละเอียดงานเปิดอยู่
 // ============================================================================
 const AUTO_REFRESH_INTERVAL_MS = 20000;
 let autoRefreshTimer = null;
@@ -300,7 +365,7 @@ function stopAutoRefresh() {
 }
 
 // ============================================================================
-// Header: ไอคอนแจ้งเตือน "LINE ส่งไม่สำเร็จ" (ย้ายมาจากการ์ดสรุปใหญ่)
+// Header: ไอคอนแจ้งเตือน "LINE ส่งไม่สำเร็จ"
 // ============================================================================
 function renderNotifFailedBadge() {
   const cardData = computeDashboardCards(state.allJobs);
@@ -328,11 +393,8 @@ document.getElementById("btn-notif-failed").addEventListener("click", () => {
 });
 
 // ============================================================================
-// Summary Cards (ตัด "LINE ส่งไม่สำเร็จ" ออกจากตารางนี้แล้ว — ย้ายไปอยู่ที่ Header)
+// Summary Cards
 // ============================================================================
-// จัดกลุ่มการ์ดเป็น 2 ชุดตามความเร่งด่วน เพื่อให้ผู้สูงอายุเห็นสิ่งที่ต้องรีบทำก่อน:
-// "urgent" = ต้องดูวันนี้ (การ์ดใหญ่ เรียงแนวตั้ง) และ "upcoming" = กำลังจะถึง (การ์ดเล็กกว่า)
-// ยังคงมีทั้ง 6 การ์ดเท่าเดิม ไม่มีการเพิ่ม/ลดจำนวนปุ่ม เพียงจัดลำดับและเน้นสีใหม่
 const CARD_DEFINITIONS = [
   // หน้าหลักเหลือ 2 ใบ: สิ่งที่เจ้าของร้านต้องทำจริง
   { key: "todo", label: "งานที่ต้องทำ", icon: "📋", group: "main", tone: "blue" },
@@ -460,8 +522,6 @@ function bindFilterInputs() {
     renderJobList();
   });
   document.getElementById("btn-clear-filters").addEventListener("click", clearAllFilters);
-  // ปุ่มเดียวกันนี้ยังโผล่ซ้ำในสถานะ "ไม่พบงาน" เพื่อให้ผู้สูงอายุกดกลับไปดูงานทั้งหมด
-  // ได้ทันทีโดยไม่ต้องไล่หาตัวกรองที่ซ่อนอยู่ด้านบน (ใช้ฟังก์ชันเดียวกัน ไม่ใช่ฟีเจอร์ใหม่)
   document.getElementById("btn-clear-filters-empty")?.addEventListener("click", clearAllFilters);
 }
 
@@ -529,9 +589,7 @@ document.getElementById("btn-cal-next").addEventListener("click", () => {
 // ============================================================================
 function renderJobList() {
   let jobs = getCardFilteredJobs();
-  // ซ่อนงาน "รับแล้ว" เป็นค่าเริ่มต้น เว้นแต่เปิดสวิตช์ไว้ หรือกำลังดู Card/ตัวกรอง
-  // ที่ต้องการงานกลุ่มนั้นโดยตรงอยู่แล้ว (เช่น ไม่ไปซ่อนซ้ำถ้าผู้ใช้เลือกสถานะ
-  // "รับแล้ว" ในตัวกรองสถานะเองตรงๆ)
+  // ซ่อนงาน "รับแล้ว" เป็นค่าเริ่มต้น เว้นแต่เปิดสวิตช์ไว้ หรือเลือกสถานะ "รับแล้ว" ในตัวกรองเอง
   if (!state.showPickedUp && state.filters.status !== "picked_up") {
     jobs = jobs.filter((j) => j.status !== "picked_up");
   }
@@ -540,15 +598,18 @@ function renderJobList() {
   }
   jobs = filterJobs(jobs, state.filters);
   jobs = sortJobsForOwner(jobs); // เลยกำหนด -> วันนี้ -> วันนัดใกล้สุด -> ปิดงาน/ยกเลิกท้ายสุด
+
   const listEl = document.getElementById("job-list");
   const emptyEl = document.getElementById("job-list-empty");
   document.getElementById("job-count").textContent = jobs.length;
   listEl.innerHTML = "";
+
   if (jobs.length === 0) {
     emptyEl.classList.remove("hidden");
     return;
   }
   emptyEl.classList.add("hidden");
+
   jobs.forEach((job) => {
     const statusInfo = getStatusDisplay(job.status);
     const urgency = getUrgencyTag(job);
@@ -606,6 +667,7 @@ function showConfirmDialog({ text, requireReason = false, confirmLabel = "ยื
     reasonEl.classList.toggle("hidden", !requireReason);
     okBtn.textContent = confirmLabel;
     backdrop.classList.remove("hidden");
+
     function cleanup() {
       backdrop.classList.add("hidden");
       okBtn.removeEventListener("click", onOk);
@@ -657,12 +719,7 @@ function buildStepperHtml(status) {
     </div>
   `;
 }
-/**
- * ผูก Event ให้แถบ 3 สถานะกดแล้วเลื่อนจอไปยังจุดที่ทำรายการได้จริง
- * ใช้วิธี Event Delegation ผูกไว้ที่ "job-modal-sheet" (Element แม่ที่ไม่เคยถูกแทนที่
- * ด้วย innerHTML เลย) ครั้งเดียวตอนเริ่มระบบ แทนการผูกทีละปุ่มทุกครั้งที่เปิดหน้าต่าง
- * วิธีนี้ทำงานแน่นอน ไม่ว่าจะเปิดหน้าต่างงานกี่ครั้งก็ตาม
- */
+// Event Delegation: ผูกที่ "job-modal-sheet" (Element แม่ที่ไม่ถูกแทนที่) ครั้งเดียวตอนเริ่มระบบ
 let currentStepperScrollTarget = "status-section";
 document.getElementById("job-modal-sheet").addEventListener("click", (e) => {
   const stepperItem = e.target.closest("[data-stepper-click]");
@@ -697,9 +754,7 @@ const LINE_EVENT_LABELS = {
   job_received: "แจ้งรับงาน",
 };
 
-// ============================================================================
 // ผลการทำรายการ: แยก "บันทึกสำเร็จหรือไม่" ออกจาก "ส่ง LINE สำเร็จหรือไม่" (ใช้ Icon + ข้อความ ไม่ใช้สีอย่างเดียว)
-// ============================================================================
 function buildLineResultText(line) {
   if (!line || !line.event) return line?.note ? `ℹ️ ${line.note}` : "";
   const label = LINE_EVENT_LABELS[line.event] ?? "แจ้งลูกค้า";
@@ -723,7 +778,6 @@ function renderActionResultHtml(result) {
       ${result.lineText ? `<div>${escapeHtml(result.lineText)}</div>` : ""}
     </div>`;
 }
-
 function getJobTotalPrice(job) {
   const total = job.price_final ?? job.price_estimate;
   return total == null ? null : Number(total);
@@ -737,9 +791,11 @@ async function openJobModal(jobId, actionResult = null) {
   const session = getSessionSnapshot();
   const isOwnerOrAdmin = session.appRole === "owner" || session.appRole === "admin";
   const isAdminOnly = session.appRole === "admin"; // เก็บถาวรเฉพาะ Admin
+
   const sheet = document.getElementById("job-modal-sheet");
   sheet.innerHTML = `<div class="center-screen"><div class="spinner"></div><p>กำลังโหลด...</p></div>`;
   document.getElementById("job-modal-backdrop").classList.remove("hidden");
+
   let images = [];
   let paymentTransactions = [];
   let customerNotifications = [];
@@ -754,11 +810,13 @@ async function openJobModal(jobId, actionResult = null) {
     paymentTransactions = [];
     customerNotifications = [];
   }
+
   const statusInfo = getStatusDisplay(job.status);
   const quantityText = job.quantity_is_over_ten ? (job.quantity_note ?? "มากกว่า 10 ชิ้น") : `${job.quantity} ชิ้น`;
   const totalPaid = computeTotalPaid(paymentTransactions);
   const totalPrice = getJobTotalPrice(job);
   const balance = totalPrice != null ? Math.max(totalPrice - totalPaid, 0) : null;
+
   sheet.innerHTML = `
     <button class="modal-close-btn" id="modal-close-btn">✕ ปิด</button>
     <h2>${escapeHtml(job.job_number)} <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span></h2>
@@ -801,10 +859,12 @@ async function openJobModal(jobId, actionResult = null) {
   `;
   document.getElementById("modal-close-btn").addEventListener("click", closeJobModal);
   currentStepperScrollTarget = "status-section";
+
   renderAppointmentSection(job, isOwnerOrAdmin, totalPrice);
   renderStatusButtons(job, { balance, totalPrice, totalPaid });
   renderPaymentSection(job, paymentTransactions, { totalPaid, totalPrice, balance }, isOwnerOrAdmin);
   renderNotificationHistorySection(customerNotifications, isOwnerOrAdmin, job.id);
+
   const archiveBtn = document.getElementById("btn-archive-job");
   if (archiveBtn) {
     archiveBtn.addEventListener("click", preventDoubleSubmit(async () => {
@@ -1017,7 +1077,7 @@ function renderAppointmentSection(job, isOwnerOrAdmin, totalPrice) {
 }
 
 // ============================================================================
-// Payment Section — สรุปยอด + ประวัติ (ยุบไว้) การรับเงินทำผ่านปุ่ม "💰 รับเงินและปิดงาน" ที่เดียว
+// Payment Section — สรุปยอด + ประวัติ (ยุบไว้)
 // ============================================================================
 function renderPaymentSection(job, transactions, totals, isOwnerOrAdmin) {
   const section = document.getElementById("payment-section");
@@ -1083,6 +1143,66 @@ function renderPaymentTxCardHtml(tx) {
 }
 
 // ============================================================================
+// เปิดงานกลับ (งานที่กด "รับแล้ว/ปิดงาน" ผิด) — เฉพาะเจ้าของร้าน/ผู้ดูแลระบบ
+// เลือกสถานะที่ถูกต้อง 1 ข้อ แล้วกดยืนยันปุ่มเดียว (ไม่มีค่าเริ่มต้น เพื่อกันเลือกผิดโดยไม่ตั้งใจ)
+// ============================================================================
+function renderReopenPanel(job, money) {
+  const container = document.getElementById("status-buttons");
+  const customerName = job.customers?.full_name ?? "-";
+  const paidNote = (money.totalPaid ?? 0) > 0
+    ? `<div class="warning-box" style="margin:10px 0;">⚠️ งานนี้มีรายการรับเงินแล้ว ${escapeHtml(money.totalPaid.toLocaleString())} บาท ระบบจะ <b>ไม่</b> ยกเลิกเงินให้อัตโนมัติ ถ้ารับเงินผิดให้ยกเลิกรายการในส่วน "ประวัติการชำระเงิน" ด้านล่าง</div>`
+    : "";
+  const optionStyle = "display:flex;align-items:center;gap:10px;min-height:56px;font-size:1.1rem;cursor:pointer;";
+  container.innerHTML = `
+    <div class="readonly-note" style="font-weight:700;">↩️ เปิดงานกลับ: ${escapeHtml(job.job_number)} (${escapeHtml(customerName)})</div>
+    <fieldset style="border:none;padding:0;margin:12px 0;">
+      <legend style="font-weight:700;margin-bottom:6px;">ตอนนี้งานอยู่ในสถานะไหนจริง ๆ?</legend>
+      <label style="${optionStyle}">
+        <input type="radio" name="reopen-target" value="waiting" style="width:26px;height:26px;flex:none;" /> 📋 งานยังไม่เสร็จ (กลับไป "รับเข้าระบบ")
+      </label>
+      <label style="${optionStyle}">
+        <input type="radio" name="reopen-target" value="completed" style="width:26px;height:26px;flex:none;" /> ✅ งานเสร็จแล้ว ลูกค้ายังไม่มารับ
+      </label>
+    </fieldset>
+    <div id="reopen-hint" aria-live="polite" style="font-size:1rem;line-height:1.6;color:#5f6368;margin-bottom:8px;">กรุณาเลือก 1 ข้อ</div>
+    ${paidNote}
+    <button class="btn btn-primary btn-big-step" id="btn-confirm-reopen" disabled>↩️ ยืนยันเปิดงานกลับ</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="btn-reopen-back" style="margin-top:10px;">← กลับ</button>
+  `;
+  const hintEl = document.getElementById("reopen-hint");
+  const confirmBtn = document.getElementById("btn-confirm-reopen");
+  const getTarget = () => container.querySelector('input[name="reopen-target"]:checked')?.value ?? null;
+  container.querySelectorAll('input[name="reopen-target"]').forEach((el) => {
+    el.addEventListener("change", () => {
+      const target = getTarget();
+      confirmBtn.disabled = !target;
+      hintEl.textContent = target === "waiting"
+        ? "📨 ถ้าเคยแจ้งลูกค้าไปแล้วว่างานเสร็จ ระบบจะส่ง LINE ขออภัยให้อัตโนมัติ (ถ้าไม่เคยแจ้ง จะไม่ส่งอะไร)"
+        : "📨 จะไม่ส่ง LINE ถึงลูกค้า";
+    });
+  });
+  document.getElementById("btn-reopen-back").addEventListener("click", () => renderStatusButtons(job, money));
+  confirmBtn.addEventListener("click", preventDoubleSubmit(async () => {
+    const target = getTarget();
+    if (!target) return;
+    confirmBtn.disabled = true;
+    try {
+      const res = await changeJobStatus({
+        accessToken: getAccessToken(), jobId: job.id, newStatus: target, reason: "กดรับแล้วผิด เปิดงานกลับ",
+      });
+      await refreshJobs();
+      const savedText = target === "waiting"
+        ? '✅ เปิดงานกลับเป็น "รับเข้าระบบ" แล้ว'
+        : '✅ เปิดงานกลับเป็น "เสร็จแล้ว (รอลูกค้ารับ)" แล้ว';
+      openJobModal(job.id, buildActionResult(savedText, res?.line ?? null));
+    } catch (err) {
+      showToast("ยังไม่ได้เปิดงานกลับ: " + toFriendlyErrorMessage(err), "error");
+      confirmBtn.disabled = false;
+    }
+  }));
+}
+
+// ============================================================================
 // Status Buttons — ขั้นตอนปกติ: รับเข้าระบบ → [✅ งานเสร็จแล้ว] → [💰 รับเงินและปิดงาน]
 // ============================================================================
 function renderStatusButtons(job, money) {
@@ -1099,7 +1219,15 @@ function renderStatusButtons(job, money) {
     return;
   }
   if (simplified === "picked_up") {
-    container.innerHTML = `<div class="readonly-note">📦 ลูกค้ารับงานแล้ว ปิดงานเรียบร้อย</div>`;
+    const role = getSessionSnapshot().appRole;
+    const canReopen = role === "owner" || role === "admin";
+    container.innerHTML = `
+      <div class="readonly-note">📦 ลูกค้ารับงานแล้ว ปิดงานเรียบร้อย</div>
+      ${canReopen ? `<button type="button" class="btn btn-secondary btn-sm" id="btn-reopen-step" style="margin-top:10px;">↩️ กดผิด เปิดงานกลับ</button>` : ""}
+    `;
+    if (canReopen) {
+      document.getElementById("btn-reopen-step").addEventListener("click", () => renderReopenPanel(job, money));
+    }
     return;
   }
 
@@ -1110,6 +1238,7 @@ function renderStatusButtons(job, money) {
       <button class="btn btn-success btn-big-step" id="btn-next-step">${hasBalance ? "💰 รับเงินและปิดงาน" : "📦 ลูกค้ารับแล้ว"}</button>
       <button class="btn btn-secondary btn-sm" id="btn-revert-step" style="margin-top:10px;">↩️ กดผิด ย้อนกลับ</button>
     `;
+
     document.getElementById("btn-revert-step").addEventListener("click", preventDoubleSubmit(async () => {
       const result = await showConfirmDialog({
         text: `↩️ กดผิด ย้อนกลับ?\n\nเลขงาน: ${job.job_number}\nลูกค้า: ${customerName}\n\nงานจะกลับเป็น "📋 รับเข้าระบบ"\nถ้าเคยแจ้งลูกค้าว่างานเสร็จแล้ว ระบบจะส่ง LINE ขออภัยให้อัตโนมัติ`,
@@ -1145,6 +1274,7 @@ function renderStatusButtons(job, money) {
         }
         return;
       }
+
       // มียอดค้าง: เปิดขั้นตอนสั้นในหน้าจอเดียว (ยอดรวม/ชำระแล้ว/คงเหลือ + วิธีชำระ + ปุ่มยืนยันปุ่มเดียว)
       container.innerHTML = `
         <div class="info-row"><span class="label">ยอดรวม</span><span class="value">${escapeHtml(totalPrice.toLocaleString())} บาท</span></div>
