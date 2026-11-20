@@ -1,11 +1,11 @@
 // family-dashboard/dashboard.js
 // Logic หลักของ Family Dashboard — เวอร์ชันลดปุ่มสูงสุดสำหรับผู้สูงอายุ
 //
-// รอบนี้เพิ่ม:
-// 1) Login แบบแป้นกด PIN (สไตล์ iPhone) ผ่าน shared/pin-pad.js — สร้างทับช่องพิมพ์ PIN เดิมจาก
-//    โค้ดไฟล์นี้เอง (ไม่ต้องแก้ index.html) ใช้ loginWithPin()/Session/Remember Device เดิมทุกอย่าง
-// 2) ปุ่ม "↩️ กดผิด เปิดงานกลับ" สำหรับงานที่กด "รับแล้ว/ปิดงาน" ผิด (เฉพาะเจ้าของร้าน/ผู้ดูแลระบบ)
-// (คงการทำงานเดิมของรอบก่อนทั้งหมด)
+// รอบนี้เพิ่ม/แก้:
+// 1) การ์ดสรุปหน้าหลักใช้ "ชื่อและสี" เดียวกับป้ายสถานะในรายการงาน:
+//    📋 รับเข้าระบบ  และ  ✅ เสร็จแล้ว  (ตัวเลขบนการ์ด = จำนวนงานในรายการเมื่อกดการ์ดนั้น)
+// 2) ปรับหน้าตา (โทนกรมท่า/พื้นครีม/ปุ่มและตัวอักษรใหญ่) ด้วย applyOwnerTheme() — ไม่ต้องแก้ index.html
+// (คงการทำงานเดิมของรอบก่อนทั้งหมด: แป้นกด PIN, เปิดงานกลับ, LINE, รับเงิน ฯลฯ)
 import { listLoginIdentities } from "../shared/auth-client.js";
 import {
   initSession, loginWithPin, logout, onSessionChange, getSessionSnapshot, getAccessToken,
@@ -26,11 +26,72 @@ import { setJobPricing, recordPayment, voidPayment } from "../shared/payment-cli
 import { retryNotification } from "../shared/notification-client.js";
 import {
   computeDashboardCards, filterJobs, buildCalendarMonthGrid, groupJobsByConfirmedDate,
-  sortJobsForOwner, getUrgencyTag, getEffectivePickupDate, getEffectivePickupTime, computeOwnerSummary,
+  sortJobsForOwner, getUrgencyTag, getEffectivePickupDate, getEffectivePickupTime,
 } from "../shared/job-aggregation.js";
 import { PICKUP_TIME_SLOTS, JOB_TYPES_FALLBACK } from "../shared/job-constants.js";
 import { getSupabaseClient } from "../shared/supabase-client.js";
 import { mountPinPad } from "../shared/pin-pad.js";
+
+// ============================================================================
+// Owner Theme — โทนกรมท่า / พื้นครีม / ปุ่มใหญ่ (ปรับผ่านตัวแปรสีของหน้า + กฎเสริมที่ปลอดภัย)
+// ============================================================================
+function applyOwnerTheme() {
+  try {
+    if (document.getElementById("qe-owner-theme")) return;
+    const style = document.createElement("style");
+    style.id = "qe-owner-theme";
+    style.textContent = `
+      :root {
+        --primary: #1b2a49; --primary-dark: #1b2a49; --primary-soft: #e3e9f5;
+        --bg: #faf6ee; --border: #c9d1e0; --success: #1e8e3e; --danger: #c5221f;
+        font-size: 18px;
+      }
+      body { background: #faf6ee; }
+      /* การ์ดสรุป: สี/ชื่อเดียวกับป้ายสถานะ */
+      .summary-card { border-radius: 20px; box-shadow: 0 2px 8px rgba(27, 42, 73, 0.10); min-height: 88px; }
+      .summary-card.tone-navy, .summary-card.tone-blue { background: #e3e9f5; }
+      .summary-card.tone-navy .count, .summary-card.tone-navy .label,
+      .summary-card.tone-blue .count, .summary-card.tone-blue .label { color: #1b2a49; }
+      .summary-card.tone-green { background: #e6f4ea; }
+      .summary-card.tone-green .count, .summary-card.tone-green .label { color: #1e8e3e; }
+      .summary-card .count { font-size: 2.2rem; line-height: 1.1; }
+      .summary-card .label { font-size: 1.15rem; font-weight: 700; }
+      .summary-card .note { font-size: 0.95rem; font-weight: 700; color: #c5221f; margin-top: 2px; }
+      .summary-card.active { outline: 3px solid #1b2a49; outline-offset: 0; }
+      /* รายการงาน */
+      .job-card { border-radius: 18px; box-shadow: 0 2px 8px rgba(27, 42, 73, 0.08); }
+      .job-card .job-number { font-size: 1.2rem; }
+      .status-badge { font-size: 0.95rem; padding: 6px 12px; }
+      /* ปุ่มและช่องกรอกใหญ่ กดง่าย */
+      .btn { border-radius: 16px; min-height: 52px; }
+      .btn-big-step { min-height: 60px; font-size: 1.2rem; }
+      input[type="text"], input[type="date"], input[type="number"], select, textarea { min-height: 48px; border-radius: 12px; }
+      /* Keyboard focus ชัดเจน */
+      button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible,
+      select:focus-visible, textarea:focus-visible, .job-card:focus-visible, .summary-card:focus-visible {
+        outline: 4px solid #f4b400; outline-offset: 2px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // แถบหัวหน้าจอ: หา Element ที่มีสีพื้นหลังจริงรอบ ๆ ชื่อผู้ใช้ แล้วเปลี่ยนเป็นกรมท่า (ไม่ต้องรู้ชื่อ Class)
+    let el = document.getElementById("header-user-name");
+    while (el && el !== document.body) {
+      const bg = getComputedStyle(el).backgroundColor;
+      const isTransparent = !bg || bg === "transparent" || /rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(bg);
+      if (!isTransparent) {
+        el.style.setProperty("background-color", "#1b2a49", "important");
+        break;
+      }
+      el = el.parentElement;
+    }
+  } catch {
+    // ปรับหน้าตาไม่สำเร็จไม่ควรทำให้ระบบใช้งานไม่ได้
+  }
+}
 
 // ============================================================================
 // Simplified Status Display (3 ระดับหลัก + ยกเลิก)
@@ -45,7 +106,7 @@ const SIMPLIFIED_STATUS_DISPLAY = {
   received: { label: "รับเข้าระบบ", icon: "📋", color: "#1b2a49" },
   completed: { label: "เสร็จแล้ว", icon: "✅", color: "#1e8e3e" },
   picked_up: { label: "รับแล้ว/ปิดงาน", icon: "📦", color: "#5f6368" },
-  cancelled: { label: "ยกเลิก", icon: "🚫", color: "#d93025" },
+  cancelled: { label: "ยกเลิก", icon: "🚫", color: "#c5221f" },
 };
 function getStatusDisplay(status) {
   return SIMPLIFIED_STATUS_DISPLAY[getSimplifiedStatusKey(status)];
@@ -116,6 +177,7 @@ const screens = {
 function showScreen(name) {
   Object.values(screens).forEach((el) => el.classList.add("hidden"));
   screens[name].classList.remove("hidden");
+  if (name === "dashboard") applyOwnerTheme(); // ต้องรอให้หน้าหลักแสดงก่อน จึงจะหาสีของแถบหัวได้
 }
 
 // ============================================================================
@@ -393,38 +455,79 @@ document.getElementById("btn-notif-failed").addEventListener("click", () => {
 });
 
 // ============================================================================
-// Summary Cards
+// Summary Cards — ชื่อ/ไอคอน/สีเดียวกับป้ายสถานะในรายการงาน (กันสับสน)
+//   📋 รับเข้าระบบ = ทุกงานที่ป้ายสถานะเป็น "รับเข้าระบบ" (รวมงานเก่า รอยืนยัน/รอทำ/กำลังทำ)
+//   ✅ เสร็จแล้ว   = ทุกงานที่ป้ายสถานะเป็น "เสร็จแล้ว" (รอลูกค้ามารับ)
 // ============================================================================
 const CARD_DEFINITIONS = [
-  // หน้าหลักเหลือ 2 ใบ: สิ่งที่เจ้าของร้านต้องทำจริง
-  { key: "todo", label: "งานที่ต้องทำ", icon: "📋", group: "main", tone: "blue" },
-  { key: "completedWaitingPickup", label: "งานเสร็จรอรับ", icon: "📦", group: "main", tone: "green" },
+  { key: "received", status: "received", group: "main", tone: "navy" },
+  { key: "completed", status: "completed", group: "main", tone: "green" },
   // การ์ดอื่นย้ายไป "ดูเพิ่มเติม" (ยุบไว้)
   { key: "dueTomorrow", label: "งานพรุ่งนี้", icon: "📆", group: "more", tone: "neutral" },
   { key: "dueWithin3Days", label: "งานภายใน 3 วัน", icon: "⏱️", group: "more", tone: "neutral" },
 ];
 function getAllCardData(jobs) {
   const base = computeDashboardCards(jobs);
-  const owner = computeOwnerSummary(jobs); // todo = วันนี้ + เลยกำหนด (นับจากวันนัดที่ใช้จริง รวมงานเก่า)
-  return { ...base, todo: owner.todo, completedWaitingPickup: owner.completedWaitingPickup };
+  return {
+    ...base,
+    received: jobs.filter((j) => getSimplifiedStatusKey(j.status) === "received"),
+    completed: jobs.filter((j) => getSimplifiedStatusKey(j.status) === "completed"),
+  };
 }
 function buildSummaryCard(def, cardData) {
   const jobs = cardData[def.key] ?? [];
+  const display = def.status ? SIMPLIFIED_STATUS_DISPLAY[def.status] : null;
+  const icon = display ? display.icon : def.icon;
+  const label = display ? display.label : def.label;
   const card = document.createElement("div");
   card.className = `summary-card tone-${def.tone}` + (state.activeCard === def.key ? " active" : "");
-  card.innerHTML = `
-    <div class="icon">${def.icon}</div>
-    <div>
-      <div class="count">${jobs.length}</div>
-      <div class="label">${def.label}</div>
-    </div>
-  `;
-  card.addEventListener("click", () => {
+  card.setAttribute("role", "button");
+  card.tabIndex = 0;
+  card.setAttribute("aria-label", `${label} ${jobs.length} งาน`);
+
+  const iconEl = document.createElement("div");
+  iconEl.className = "icon";
+  iconEl.textContent = icon;
+  const body = document.createElement("div");
+  const countEl = document.createElement("div");
+  countEl.className = "count";
+  countEl.textContent = String(jobs.length);
+  const labelEl = document.createElement("div");
+  labelEl.className = "label";
+  labelEl.textContent = label;
+  body.appendChild(countEl);
+  body.appendChild(labelEl);
+
+  // เฉพาะการ์ด "รับเข้าระบบ": บอกว่ามีงานที่ต้องรีบทำกี่งาน (ข้อมูลเดิมของการ์ด "งานที่ต้องทำ" ยังอยู่ แต่ไม่ใช้เป็นตัวเลขหลัก)
+  if (def.status === "received") {
+    const overdue = jobs.filter((j) => getUrgencyTag(j) === "overdue").length;
+    const today = jobs.filter((j) => getUrgencyTag(j) === "today").length;
+    const parts = [];
+    if (overdue > 0) parts.push(`⚠️ เลยกำหนด ${overdue}`);
+    if (today > 0) parts.push(`📅 วันนี้ ${today}`);
+    if (parts.length > 0) {
+      const note = document.createElement("div");
+      note.className = "note";
+      note.textContent = parts.join("  •  ");
+      body.appendChild(note);
+    }
+  }
+  card.appendChild(iconEl);
+  card.appendChild(body);
+
+  function activate() {
     state.activeCard = state.activeCard === def.key ? null : def.key;
     state.selectedCalendarDate = null;
     state.showNotifFailedOnly = false;
     renderAll();
     document.getElementById("job-list-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  card.addEventListener("click", activate);
+  card.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      activate();
+    }
   });
   return card;
 }
@@ -734,7 +837,7 @@ const PAYMENT_METHOD_LABELS = { cash: "เงินสด", transfer: "โอน
 const NOTIFICATION_STATUS_LABELS = {
   pending: { label: "รอส่ง", icon: "⏳", color: "#f9a825" },
   sent: { label: "ส่งสำเร็จ", icon: "✅", color: "#1e8e3e" },
-  failed: { label: "ส่งไม่สำเร็จ", icon: "📵", color: "#d93025" },
+  failed: { label: "ส่งไม่สำเร็จ", icon: "📵", color: "#c5221f" },
   cancelled: { label: "ยกเลิกแล้ว", icon: "🚫", color: "#5f6368" },
 };
 const NOTIFICATION_TYPE_LABELS = {
