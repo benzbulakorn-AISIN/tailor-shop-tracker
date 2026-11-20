@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ติดตามสถานะงาน</title>
 <style>
   :root {
@@ -134,6 +134,20 @@
     font-weight: 700;
     margin: 4px 2px 10px 2px;
   }
+  .pickup-box {
+    background: #e6f4ea;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin: 12px 0 4px 0;
+    font-weight: 700;
+    font-size: 1.05rem;
+    line-height: 1.5;
+  }
+  .btn:focus-visible { outline: 4px solid #f4b400; outline-offset: 2px; }
+  .info-row .value { word-break: break-word; min-width: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation-duration: 3s; }
+  }
 </style>
 </head>
 <body>
@@ -149,7 +163,7 @@
 <!-- ======================== Error Screen ======================== -->
 <div id="screen-error" class="center-screen hidden">
   <p style="font-size:3rem;">⚠️</p>
-  <p id="error-message">เกิดข้อผิดพลาด</p>
+  <p id="error-message" role="alert">เกิดข้อผิดพลาด</p>
   <button class="btn btn-secondary" style="margin-top:16px;max-width:240px;" onclick="location.reload()">ลองใหม่อีกครั้ง</button>
 </div>
 
@@ -172,7 +186,7 @@
   import { initLiff, getLineIdentity, closeLiffWindow, isRunningInsideLineApp } from "../shared/liff-adapter.js";
   import { identifyCustomer } from "../shared/customer-client.js";
   import { fetchMyJobs, fetchMyJobImages, fetchMyJobPaidTotal, fetchMyJobNotifications } from "../shared/customer-status-client.js";
-  import { formatThaiDate, formatThaiDateTime } from "../shared/utils.js";
+  import { formatThaiDate, formatThaiDateTime, escapeHtml, toFriendlyErrorMessage } from "../shared/utils.js";
 
   // ----------------------------------------------------------------------------
   // Simplified Status Display (3 ระดับหลัก + ยกเลิก — ตรงกับฝั่ง Dashboard ร้าน)
@@ -243,7 +257,7 @@
 
       await loadJobs(result.access_token);
     } catch (err) {
-      showError(err.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+      showError(toFriendlyErrorMessage(err, "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง"));
     }
   }
 
@@ -270,6 +284,10 @@
   async function renderJobCard(job, accessToken) {
     const statusInfo = getStatusDisplay(job.status);
     const quantityText = job.quantity_is_over_ten ? (job.quantity_note ?? "มากกว่า 10 ชิ้น") : `${job.quantity} ชิ้น`;
+    // นัดรับ: วันที่ลูกค้าเลือกตอนฝากงานถือเป็นนัดจริงทันที (ร้านเปลี่ยนภายหลังได้ -> confirmed_pickup_* คือค่าล่าสุด)
+    const pickupDate = job.confirmed_pickup_date ?? job.requested_pickup_date;
+    const pickupTime = job.confirmed_pickup_time ?? job.requested_pickup_time_slot;
+    const isClosed = job.status === "picked_up" || job.status === "cancelled";
 
     const [images, paidTotal, notifications] = await Promise.all([
       fetchMyJobImages({ accessToken, jobId: job.id }),
@@ -284,28 +302,25 @@
     card.className = "card";
     card.innerHTML = `
       <div class="job-card-top">
-        <div class="job-number">${job.job_number}</div>
+        <div class="job-number">${escapeHtml(job.job_number)}</div>
         <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span>
       </div>
 
       ${images.length > 0 ? `
       <div class="photo-grid-view" style="margin-top:10px;">
-        ${images.map((img) => `<img src="${img.signedUrl ?? ""}" alt="รูปงาน" />`).join("")}
+        ${images.map((img) => `<img src="${escapeHtml(img.signedUrl ?? "")}" alt="รูปงาน" />`).join("")}
       </div>` : ""}
 
       <div class="section-title">ข้อมูลงาน</div>
-      <div class="info-row"><span class="label">ประเภทงาน</span><span class="value">${job.job_types?.label_th ?? job.job_type_other ?? "-"}</span></div>
-      <div class="info-row"><span class="label">จำนวน</span><span class="value">${quantityText}</span></div>
-      ${job.description ? `<div class="info-row"><span class="label">รายละเอียด</span><span class="value">${job.description}</span></div>` : ""}
+      <div class="info-row"><span class="label">ประเภทงาน</span><span class="value">${escapeHtml(job.job_types?.label_th ?? job.job_type_other ?? "-")}</span></div>
+      <div class="info-row"><span class="label">จำนวน</span><span class="value">${escapeHtml(quantityText)}</span></div>
+      ${job.description ? `<div class="info-row"><span class="label">รายละเอียด</span><span class="value">${escapeHtml(job.description)}</span></div>` : ""}
       <div class="info-row"><span class="label">วันที่ฝากงาน</span><span class="value">${formatThaiDate(job.created_at)}</span></div>
-      <div class="info-row"><span class="label">วันที่ต้องการรับ</span><span class="value">${formatThaiDate(job.requested_pickup_date)} ${job.requested_pickup_time_slot} น.</span></div>
-      ${job.confirmed_pickup_date ? `
-      <div class="info-row"><span class="label">วันนัดที่ร้านยืนยัน</span><span class="value">${formatThaiDate(job.confirmed_pickup_date)} ${job.confirmed_pickup_time} น.</span></div>
-      ` : `<div class="warning-box">⏳ ร้านกำลังตรวจสอบและจะยืนยันวันนัดรับเร็วๆ นี้</div>`}
+      ${pickupDate && !isClosed ? `<div class="pickup-box" role="status">📅 นัดรับวันที่ ${escapeHtml(formatThaiDate(pickupDate))}${pickupTime ? ` เวลา ${escapeHtml(pickupTime)} น.` : ""}</div>` : ""}
 
       <div class="section-title">ราคาและการชำระเงิน</div>
-      <div class="info-row"><span class="label">ราคาประเมิน</span><span class="value">${job.price_estimate != null ? job.price_estimate.toLocaleString() + " บาท" : "ยังไม่ระบุ"}</span></div>
-      <div class="info-row"><span class="label">ราคาสรุปจริง</span><span class="value">${job.price_final != null ? job.price_final.toLocaleString() + " บาท" : "ยังไม่ระบุ"}</span></div>
+      <div class="info-row"><span class="label">ราคาประเมิน</span><span class="value">${job.price_estimate != null ? escapeHtml(job.price_estimate.toLocaleString()) + " บาท" : "ยังไม่ระบุ"}</span></div>
+      <div class="info-row"><span class="label">ราคาสรุปจริง</span><span class="value">${job.price_final != null ? escapeHtml(job.price_final.toLocaleString()) + " บาท" : "ยังไม่ระบุ"}</span></div>
       <div class="info-row"><span class="label">เงินมัดจำที่ต้องการ</span><span class="value">${(job.deposit_amount ?? 0).toLocaleString()} บาท</span></div>
       <div class="info-row"><span class="label">สถานะการชำระ</span><span class="value">${paymentInfo.icon} ${paymentInfo.label}</span></div>
       ${balance != null ? `

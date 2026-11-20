@@ -86,6 +86,48 @@ export function isValidPinFormat(pin) {
 }
 
 // ============================================================================
+// Safe Text Helpers (ป้องกัน XSS เมื่อจำเป็นต้องประกอบ HTML ด้วย Template String)
+// ============================================================================
+
+/**
+ * Escape ข้อความจากผู้ใช้/ลูกค้าก่อนฝังลงใน HTML (ชื่อ, รายละเอียด, หมายเหตุ, error_message ฯลฯ)
+ * ใช้ได้ทั้งในเนื้อหา Element และค่า Attribute ที่อยู่ในเครื่องหมายคำพูด
+ */
+export function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** เหลือเฉพาะตัวเลขของเบอร์โทร (ตัดช่องว่าง, ขีด, วงเล็บ ฯลฯ) สำหรับเปรียบเทียบในการค้นหา */
+export function normalizePhoneDigits(value) {
+  return String(value ?? "").replace(/[^0-9]/g, "");
+}
+
+/** ปรับข้อความค้นหาให้เทียบกันได้: ตัวพิมพ์เล็ก + ตัดช่องว่างหัวท้าย */
+export function normalizeSearchText(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+/**
+ * แปลง Error ของเครือข่าย (เช่น "Failed to fetch" ภาษาอังกฤษ) ให้เป็นข้อความไทยที่บอกวิธีแก้
+ * ใช้ครอบ catch ของ Action สำคัญ เพื่อไม่ให้ผู้ใช้เข้าใจผิดว่าบันทึกสำเร็จ
+ */
+export function toFriendlyErrorMessage(err, fallback = "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง") {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return "ไม่มีสัญญาณอินเทอร์เน็ต ยังไม่ได้บันทึก กรุณาต่อสัญญาณแล้วลองใหม่";
+  }
+  if (err instanceof TypeError) {
+    return "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ยังไม่ได้บันทึก กรุณาตรวจสอบสัญญาณแล้วลองใหม่";
+  }
+  return err?.message || fallback;
+}
+
+// ============================================================================
 // Idempotency Key (ป้องกันการส่งซ้ำ เช่น Submit ฟอร์ม, บันทึกรับเงิน)
 // ============================================================================
 
@@ -281,3 +323,26 @@ export const PAYMENT_STATUS_DISPLAY = {
   paid: { label: "ชำระครบแล้ว", icon: "✅", color: "#1e8e3e" },
   refunded: { label: "คืนเงินแล้ว", icon: "↩️", color: "#5f6368" },
 };
+
+// ============================================================================
+// สถานะที่ "เจ้าของร้าน" เห็น (รวมสถานะภายในเดิมให้เหลือ 4 ป้าย)
+// สถานะจริงในฐานข้อมูลยังมี 6 ค่าเหมือนเดิม (Compatibility) นี่คือการรวมป้ายแสดงผลเท่านั้น
+// pending_confirmation / waiting / in_progress -> "รับเข้าระบบ"
+// ============================================================================
+export function getOwnerStatusKey(status) {
+  if (status === "completed") return "completed";
+  if (status === "picked_up") return "picked_up";
+  if (status === "cancelled") return "cancelled";
+  return "received";
+}
+
+export const OWNER_STATUS_DISPLAY = {
+  received: { label: "รับเข้าระบบ", icon: "📋", color: "#1a5276" },
+  completed: { label: "เสร็จแล้ว", icon: "✅", color: "#1e8e3e" },
+  picked_up: { label: "รับแล้ว/ปิดงาน", icon: "📦", color: "#5f6368" },
+  cancelled: { label: "ยกเลิก", icon: "🚫", color: "#d93025" },
+};
+
+export function getOwnerStatusDisplay(status) {
+  return OWNER_STATUS_DISPLAY[getOwnerStatusKey(status)];
+}

@@ -2,20 +2,20 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ฝากงานตัดเย็บ</title>
 <style>
   :root {
-    --primary: #1a73e8;
-    --primary-dark: #0d47a1;
+    --primary: #1b2a49;
+    --primary-soft: #e3e9f5;
     --success: #1e8e3e;
-    --danger: #d93025;
+    --danger: #c5221f;
     --warning: #f9a825;
     --text: #202124;
     --text-muted: #5f6368;
-    --border: #dadce0;
-    --bg: #f4f6f8;
-    font-size: 17px;
+    --border: #c9d1e0;
+    --bg: #faf6ee;
+    font-size: 18px;
   }
   * { box-sizing: border-box; }
   body {
@@ -36,13 +36,13 @@
   }
   .card {
     background: #fff;
-    border-radius: 16px;
+    border-radius: 18px;
     padding: 20px;
     margin-bottom: 16px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    box-shadow: 0 1px 6px rgba(27, 42, 73, 0.1);
   }
   .card h2 {
-    font-size: 1.1rem;
+    font-size: 1.15rem;
     margin: 0 0 14px 0;
     display: flex;
     align-items: center;
@@ -52,7 +52,7 @@
     display: block;
     font-weight: 600;
     margin-bottom: 6px;
-    font-size: 0.95rem;
+    font-size: 1rem;
   }
   .required::after { content: " *"; color: var(--danger); }
   input[type="text"], input[type="tel"], input[type="date"],
@@ -60,20 +60,24 @@
     width: 100%;
     font-size: 1.05rem;
     padding: 14px;
-    border-radius: 12px;
+    min-height: 52px;
+    border-radius: 14px;
     border: 2px solid var(--border);
     margin-bottom: 14px;
     font-family: inherit;
     background: #fff;
+    color: var(--text);
   }
-  input:focus, select:focus, textarea:focus {
-    outline: none;
+  input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 4px solid #f4b400;
+    outline-offset: 1px;
     border-color: var(--primary);
   }
-  textarea { min-height: 80px; resize: vertical; }
+  textarea { min-height: 96px; resize: vertical; }
   .field-error {
     color: var(--danger);
-    font-size: 0.85rem;
+    font-size: 0.95rem;
+    font-weight: 600;
     margin-top: -10px;
     margin-bottom: 12px;
     display: none;
@@ -84,20 +88,24 @@
     border-radius: 12px;
     padding: 12px 14px;
     margin-bottom: 14px;
-    font-size: 0.95rem;
+    font-size: 1rem;
     color: var(--text-muted);
   }
   .btn {
     display: block;
     width: 100%;
-    padding: 16px;
-    font-size: 1.1rem;
+    min-height: 56px;
+    padding: 14px 16px;
+    font-size: 1.15rem;
     font-weight: 700;
-    border-radius: 14px;
+    font-family: inherit;
+    border-radius: 16px;
     border: none;
     cursor: pointer;
     text-align: center;
+    line-height: 1.2;
   }
+  .btn:focus-visible { outline: 4px solid #f4b400; outline-offset: 2px; }
   .btn-primary { background: var(--primary); color: #fff; }
   .btn-primary:disabled { background: #9aa0a6; cursor: not-allowed; }
   .btn-secondary { background: #fff; color: var(--primary); border: 2px solid var(--primary); }
@@ -106,11 +114,12 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    background: #e8f0fe;
-    border-radius: 12px;
+    background: var(--primary-soft);
+    border-radius: 14px;
     padding: 10px 14px;
     margin-bottom: 16px;
-    font-size: 0.9rem;
+    font-size: 1rem;
+    word-break: break-word;
   }
   .photo-grid {
     display: grid;
@@ -121,7 +130,7 @@
   .photo-thumb {
     position: relative;
     aspect-ratio: 1;
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
     background: #eee;
   }
@@ -129,52 +138,74 @@
   .photo-thumb .remove-btn {
     position: absolute;
     top: 2px; right: 2px;
-    background: rgba(0,0,0,0.6);
+    background: rgba(0,0,0,0.65);
     color: #fff;
     border: none;
     border-radius: 50%;
-    width: 24px; height: 24px;
-    font-size: 0.9rem;
+    width: 44px; height: 44px;
+    font-size: 1.1rem;
     cursor: pointer;
   }
+  .photo-thumb .remove-btn:focus-visible { outline: 3px solid #f4b400; }
   .upload-btn {
     border: 2px dashed var(--border);
-    border-radius: 12px;
-    padding: 16px;
+    border-radius: 14px;
+    padding: 18px;
     text-align: center;
     color: var(--text-muted);
     cursor: pointer;
     margin-bottom: 12px;
-    font-size: 0.95rem;
+    font-size: 1rem;
+    min-height: 56px;
+    background: #fff;
+    width: 100%;
+    font-family: inherit;
   }
-  .warning-box {
+  .upload-btn:focus-visible { outline: 4px solid #f4b400; outline-offset: 2px; }
+  .info-box {
     background: #fff8e1;
     border: 1px solid var(--warning);
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 12px 14px;
-    font-size: 0.9rem;
+    font-size: 1rem;
+    line-height: 1.6;
     margin-bottom: 14px;
     display: flex;
     gap: 8px;
   }
+  .consent-intro { font-size: 1.05rem; line-height: 1.7; margin: 0 0 12px 0; }
+  details.consent-details { margin-bottom: 16px; }
+  details.consent-details summary {
+    color: var(--primary);
+    text-decoration: underline;
+    font-weight: 600;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  details.consent-details summary:focus-visible { outline: 4px solid #f4b400; outline-offset: 2px; }
   .consent-text {
-    font-size: 0.95rem;
+    font-size: 0.98rem;
     line-height: 1.7;
     color: var(--text);
     background: #f8f9fa;
     border-radius: 12px;
     padding: 16px;
-    margin-bottom: 16px;
+    margin-top: 6px;
   }
-  .consent-check {
+  .summary-card { border: 2px solid var(--primary); }
+  .summary-row {
     display: flex;
-    align-items: flex-start;
     gap: 10px;
-    margin-bottom: 16px;
+    padding: 8px 0;
+    border-bottom: 1px solid #eceff4;
     font-size: 1rem;
-    font-weight: 600;
+    line-height: 1.5;
   }
-  .consent-check input { width: 24px; height: 24px; margin-top: 2px; flex-shrink: 0; }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .s-label { flex: 0 0 38%; color: var(--text-muted); }
+  .summary-row .s-value { flex: 1; font-weight: 600; word-break: break-word; min-width: 0; }
   .center-screen {
     display: flex;
     flex-direction: column;
@@ -193,15 +224,28 @@
     margin-bottom: 16px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation-duration: 3s; }
+  }
   .success-icon { font-size: 4rem; margin-bottom: 12px; }
   .job-number-box {
-    background: #e8f5e9;
-    border-radius: 14px;
+    background: #e6f4ea;
+    border-radius: 16px;
     padding: 18px;
     font-size: 1.4rem;
     font-weight: 800;
     color: var(--success);
     margin: 16px 0;
+    word-break: break-word;
+  }
+  .pickup-box {
+    background: var(--primary-soft);
+    border-radius: 16px;
+    padding: 16px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.6;
+    margin-bottom: 14px;
   }
 </style>
 </head>
@@ -218,30 +262,32 @@
 <!-- ======================== Offline / Error Screen ======================== -->
 <div id="screen-fatal-error" class="center-screen hidden">
   <p style="font-size:3rem;">⚠️</p>
-  <p id="fatal-error-message">เกิดข้อผิดพลาด</p>
-  <button class="btn btn-primary" style="margin-top:16px;max-width:240px;" onclick="location.reload()">ลองใหม่อีกครั้ง</button>
+  <p id="fatal-error-message" role="alert">เกิดข้อผิดพลาด</p>
+  <button class="btn btn-primary" style="margin-top:16px;max-width:260px;" id="btn-reload">🔄 ลองใหม่อีกครั้ง</button>
 </div>
 
-<!-- ======================== Consent Screen (ปรับให้ง่าย: ข้อความเดียว + ติ๊กเดียว + ปุ่มเดียว) ======================== -->
+<!-- ======================== Consent Screen: ปุ่มเดียว (กดปุ่ม = ให้ความยินยอม) ======================== -->
 <div id="screen-consent" class="container hidden">
   <div class="card">
-    <h2>🔒 แจ้งวัตถุประสงค์การเก็บข้อมูล</h2>
-    <div class="consent-text">
-      ร้านจะเก็บข้อมูลต่อไปนี้เพื่อใช้ติดต่อและติดตามงานตัดเย็บของท่านเท่านั้น ได้แก่
-      รหัสผู้ใช้ LINE ชื่อ-เบอร์โทร รูปถ่ายงาน และรายละเอียดงาน/การชำระเงินที่เกี่ยวข้อง
-      ข้อมูลจะไม่ถูกเปิดเผยต่อบุคคลภายนอก
-    </div>
-    <label class="consent-check">
-      <input type="checkbox" id="consent-all-checkbox" />
-      <span>ยินยอมให้ร้านเก็บและใช้ข้อมูลตามที่แจ้งข้างต้น</span>
-    </label>
-    <button class="btn btn-primary" id="btn-consent-continue">ยินยอมและดำเนินการต่อ</button>
+    <h2>🔒 ก่อนเริ่มฝากงาน</h2>
+    <p class="consent-intro">
+      ร้านจะเก็บชื่อ เบอร์โทร รูปถ่ายงาน และรายละเอียดงาน เพื่อใช้ติดต่อและติดตามงานของท่านเท่านั้น
+      การกดปุ่มด้านล่างถือว่าท่านยินยอมตามเงื่อนไขนี้
+    </p>
+    <details class="consent-details">
+      <summary>อ่านเงื่อนไขและนโยบายความเป็นส่วนตัว</summary>
+      <div class="consent-text">
+        ร้านจะเก็บข้อมูลต่อไปนี้เพื่อใช้ติดต่อและติดตามงานตัดเย็บของท่านเท่านั้น ได้แก่
+        รหัสผู้ใช้ LINE ชื่อ-เบอร์โทร รูปถ่ายงาน และรายละเอียดงาน/การชำระเงินที่เกี่ยวข้อง
+        ข้อมูลจะไม่ถูกเปิดเผยต่อบุคคลภายนอก
+      </div>
+    </details>
+    <button class="btn btn-primary" id="btn-consent-continue">ยอมรับและเริ่มฝากงาน</button>
   </div>
 </div>
 
 <!-- ======================== Main Form ======================== -->
 <div id="screen-form" class="container hidden">
-
   <div class="line-badge" id="line-identity-badge">
     <span>📱</span>
     <span id="line-identity-text">เชื่อมต่อผ่าน LINE แล้ว</span>
@@ -250,88 +296,90 @@
   <div class="card">
     <h2>👤 ข้อมูลลูกค้า</h2>
     <label class="required" for="input-full-name">ชื่อลูกค้า</label>
-    <input type="text" id="input-full-name" maxlength="100" placeholder="เช่น สมหญิง ใจดี" />
-    <div class="field-error" id="error-full-name">กรุณากรอกชื่อลูกค้า</div>
+    <input type="text" id="input-full-name" maxlength="100" autocomplete="name" placeholder="เช่น สมหญิง ใจดี" />
+    <div class="field-error" id="error-full-name" role="alert">กรุณากรอกชื่อลูกค้า</div>
 
     <label class="required" for="input-phone">เบอร์โทรศัพท์</label>
-    <input type="tel" id="input-phone" maxlength="15" placeholder="เช่น 0812345678" />
-    <div class="field-error" id="error-phone">รูปแบบเบอร์โทรไม่ถูกต้อง</div>
+    <input type="tel" id="input-phone" maxlength="15" autocomplete="tel" inputmode="tel" placeholder="เช่น 0812345678" />
+    <div class="field-error" id="error-phone" role="alert">รูปแบบเบอร์โทรไม่ถูกต้อง เช่น 0812345678</div>
   </div>
 
   <div class="card">
     <h2>✂️ ข้อมูลงาน</h2>
-
     <label>วันที่และเวลาที่นำผ้ามา (ระบบกรอกให้อัตโนมัติ)</label>
     <div class="readonly-box" id="display-dropoff-datetime">-</div>
 
     <label class="required" for="select-job-type">ประเภทงาน</label>
     <select id="select-job-type"></select>
-    <div class="field-error" id="error-job-type">กรุณาเลือกประเภทงาน</div>
+    <div class="field-error" id="error-job-type" role="alert">กรุณาเลือกประเภทงาน</div>
 
     <div id="job-type-other-wrapper" class="hidden">
       <label class="required" for="input-job-type-other">ระบุรายละเอียดประเภทงาน (อื่น ๆ)</label>
       <input type="text" id="input-job-type-other" maxlength="200" placeholder="ระบุประเภทงานที่ต้องการ" />
-      <div class="field-error" id="error-job-type-other">กรุณาระบุรายละเอียดประเภทงาน</div>
+      <div class="field-error" id="error-job-type-other" role="alert">กรุณาระบุรายละเอียดประเภทงาน</div>
     </div>
 
-    <label for="input-description">รายละเอียดงาน</label>
-    <textarea id="input-description" maxlength="500" placeholder="เช่น เสื้อเชิ้ตสีขาว แก้ไซส์ให้เล็กลง 2 นิ้ว"></textarea>
+    <label for="input-description">รายละเอียดที่ต้องการให้ร้านทำ</label>
+    <textarea id="input-description" maxlength="500" placeholder="เช่น ลดเอว 2 นิ้ว หรือตัดขากางเกง"></textarea>
 
     <label class="required" for="select-quantity">จำนวนชิ้น</label>
     <select id="select-quantity">
       <option value="">-- เลือกจำนวน --</option>
     </select>
-    <div class="field-error" id="error-quantity">กรุณาเลือกจำนวนชิ้น</div>
+    <div class="field-error" id="error-quantity" role="alert">กรุณาเลือกจำนวนชิ้น</div>
 
     <div id="quantity-over-ten-wrapper" class="hidden">
       <label class="required" for="input-quantity-note">ระบุจำนวนชิ้น (มากกว่า 10)</label>
       <input type="text" id="input-quantity-note" maxlength="50" placeholder="เช่น 15 ตัว" />
-      <div class="field-error" id="error-quantity-note">กรุณาระบุจำนวนชิ้น</div>
+      <div class="field-error" id="error-quantity-note" role="alert">กรุณาระบุจำนวนชิ้น</div>
     </div>
 
     <label>รูปถ่ายผ้าหรืองาน (ไม่เกิน 5 รูป)</label>
     <div class="photo-grid" id="photo-preview-grid"></div>
-    <div class="upload-btn" id="btn-add-photo">📷 แตะเพื่อถ่ายรูปหรือเลือกรูปภาพ</div>
+    <button type="button" class="upload-btn" id="btn-add-photo">📷 แตะเพื่อถ่ายรูปหรือเลือกรูปภาพ</button>
     <input type="file" id="input-photo-file" accept="image/jpeg,image/png,image/webp" capture="environment" multiple class="hidden" />
-    <div class="field-error" id="error-photo"></div>
-
-    <label for="input-customer-note">หมายเหตุเพิ่มเติม</label>
-    <textarea id="input-customer-note" maxlength="300" placeholder="ข้อมูลเพิ่มเติมที่อยากแจ้งร้าน (ถ้ามี)"></textarea>
+    <div class="field-error" id="error-photo" role="alert"></div>
   </div>
 
   <div class="card">
-    <h2>📅 ข้อมูลนัดรับ</h2>
-
-    <label class="required" for="input-pickup-date">วันที่ต้องการรับ</label>
+    <h2>📅 นัดรับงาน</h2>
+    <label class="required" for="input-pickup-date">วันที่นัดรับ</label>
     <input type="date" id="input-pickup-date" />
-    <div class="field-error" id="error-pickup-date">กรุณาเลือกวันที่ต้องการรับ (ต้องไม่ใช่วันที่ผ่านมาแล้ว)</div>
+    <div class="field-error" id="error-pickup-date" role="alert">กรุณาเลือกวันที่นัดรับ (ต้องไม่ใช่วันที่ผ่านมาแล้ว)</div>
 
-    <label class="required" for="select-pickup-time">เวลาที่ต้องการรับ</label>
+    <label class="required" for="select-pickup-time">เวลานัดรับ</label>
     <select id="select-pickup-time">
       <option value="">-- เลือกเวลา --</option>
     </select>
-    <div class="field-error" id="error-pickup-time">กรุณาเลือกเวลาที่ต้องการรับ</div>
+    <div class="field-error" id="error-pickup-time" role="alert">กรุณาเลือกเวลานัดรับ</div>
 
-    <div class="warning-box">
-      <span>⚠️</span>
-      <span>วันและเวลาที่เลือกเป็นเพียง "วันที่ต้องการรับ" เท่านั้น ยังไม่ใช่วันนัดที่ยืนยันแล้ว ร้านจะตรวจสอบและยืนยันวันนัดจริงอีกครั้งผ่าน LINE</span>
+    <div class="info-box">
+      <span>📅</span>
+      <span>วันและเวลาที่เลือกคือ <b>นัดรับของท่าน</b> ร้านจะรับงานเข้าระบบทันที หากต้องการเปลี่ยนภายหลัง กรุณาติดต่อร้าน</span>
     </div>
   </div>
 
-  <button class="btn btn-primary" id="btn-submit-job">ส่งข้อมูลฝากงาน</button>
-  <p id="submit-status-text" style="text-align:center;color:var(--text-muted);margin-top:10px;"></p>
+  <!-- สรุปก่อนส่ง (หน้าเดียว อัปเดตทันทีตามที่กรอก) -->
+  <div class="card summary-card" aria-live="polite">
+    <h2>📋 สรุปก่อนส่ง</h2>
+    <div id="order-summary"></div>
+  </div>
+
+  <button class="btn btn-primary" id="btn-submit-job">📤 ส่งงานให้ร้าน</button>
+  <p id="submit-status-text" role="status" style="text-align:center;color:var(--text-muted);margin-top:10px;"></p>
 </div>
 
 <!-- ======================== Success Screen ======================== -->
 <div id="screen-success" class="container hidden">
   <div class="card" style="text-align:center;">
     <div class="success-icon">✅</div>
-    <h2 style="justify-content:center;">รับคำขอฝากงานแล้ว</h2>
+    <h2 style="justify-content:center;">ร้านรับงานของท่านแล้ว</h2>
     <p>เลขงานของท่านคือ</p>
     <div class="job-number-box" id="success-job-number">-</div>
-    <p id="success-urgent-note" class="warning-box hidden">🚨 ทางร้านรับทราบว่าเป็นงานด่วน จะรีบตรวจสอบและยืนยันนัดโดยเร็วที่สุด</p>
-    <p style="color:var(--text-muted);font-size:0.95rem;">ร้านจะตรวจสอบและยืนยันวันนัดรับอีกครั้งผ่าน LINE กรุณากดเมนู "ติดตามงาน" เพื่อตรวจสอบสถานะในภายหลัง</p>
-    <div id="photo-upload-progress" class="hidden" style="margin-top:14px;color:var(--text-muted);"></div>
+    <div class="pickup-box" id="success-pickup" role="status">-</div>
+    <p id="success-urgent-note" class="info-box hidden">🚨 ทางร้านรับทราบว่าเป็นงานด่วน จะเตรียมงานให้ทันนัดรับ</p>
+    <p style="color:var(--text-muted);font-size:1rem;">กดเมนู "ติดตามงาน" ใน LINE เพื่อตรวจสอบสถานะได้ทุกเมื่อ</p>
+    <div id="photo-upload-progress" class="hidden" role="status" style="margin-top:14px;color:var(--text-muted);"></div>
     <button class="btn btn-secondary" style="margin-top:16px;" id="btn-close-liff">ปิดหน้าต่าง</button>
   </div>
 </div>
@@ -343,7 +391,7 @@
   import { uploadJobImages } from "../shared/job-image-upload.js";
   import {
     showToast, preventDoubleSubmit, isValidThaiPhone,
-    generateIdempotencyKey, formatThaiDateTime, getTodayBangkokISODate, getNowBangkokTime,
+    formatThaiDate, formatThaiDateTime, getTodayBangkokISODate, toFriendlyErrorMessage,
   } from "../shared/utils.js";
   import { PICKUP_TIME_SLOTS, JOB_TYPES_FALLBACK, MAX_JOB_PHOTOS } from "../shared/job-constants.js";
   import { getSupabaseClient } from "../shared/supabase-client.js";
@@ -366,6 +414,7 @@
     document.getElementById("fatal-error-message").textContent = message;
     showScreen("fatalError");
   }
+  document.getElementById("btn-reload").addEventListener("click", () => location.reload());
 
   // ---------------------------------------------------------------------------
   // State
@@ -374,6 +423,8 @@
   let jobTypesList = [];
   let selectedPhotoFiles = [];
   let createdJobId = null;
+  // ใช้ Key เดียวต่อการฝากงาน 1 ครั้ง: ถ้าส่งแล้วเน็ตหลุดแล้วกดส่งใหม่ Server จะคืนงานเดิม ไม่สร้างงานซ้ำ
+  let submissionId = null;
 
   // ---------------------------------------------------------------------------
   // Init: LIFF + Job Types
@@ -389,16 +440,15 @@
         return;
       }
       lineIdentityContext = await getLineIdentity();
-
       await loadJobTypes();
       setupDropoffDisplay();
       setupPickupDateDefaults();
       populateQuantityOptions();
       populatePickupTimeOptions();
-
+      renderOrderSummary();
       showScreen("consent");
     } catch (err) {
-      showFatalError(err.message || "ไม่สามารถเริ่มต้นระบบได้ กรุณาลองใหม่อีกครั้ง");
+      showFatalError(toFriendlyErrorMessage(err, "ไม่สามารถเริ่มต้นระบบได้ กรุณาลองใหม่อีกครั้ง"));
     }
   }
 
@@ -409,7 +459,11 @@
 
   function renderJobTypeOptions() {
     const select = document.getElementById("select-job-type");
-    select.innerHTML = '<option value="">-- เลือกประเภทงาน --</option>';
+    select.textContent = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "-- เลือกประเภทงาน --";
+    select.appendChild(placeholder);
     jobTypesList.forEach((jt) => {
       const opt = document.createElement("option");
       opt.value = jt.id ?? jt.code;
@@ -451,7 +505,11 @@
 
   function populateQuantityOptions() {
     const select = document.getElementById("select-quantity");
-    select.innerHTML = '<option value="">-- เลือกจำนวน --</option>';
+    select.textContent = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "-- เลือกจำนวน --";
+    select.appendChild(placeholder);
     for (let i = 1; i <= 10; i++) {
       const opt = document.createElement("option");
       opt.value = String(i);
@@ -466,7 +524,11 @@
 
   function populatePickupTimeOptions() {
     const select = document.getElementById("select-pickup-time");
-    select.innerHTML = '<option value="">-- เลือกเวลา --</option>';
+    select.textContent = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "-- เลือกเวลา --";
+    select.appendChild(placeholder);
     PICKUP_TIME_SLOTS.forEach((slot) => {
       const opt = document.createElement("option");
       opt.value = slot;
@@ -476,18 +538,10 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Consent -> Identify (ปรับให้ง่าย: ติ๊กเดียวครอบคลุมทั้ง 3 ประเภท Consent
-  // ที่ต้องบันทึกลง consent_logs ตามข้อกำหนด PDPA เบื้องหลัง)
+  // Consent -> Identify (ปุ่มเดียว: การกดปุ่ม = ยินยอม ครอบคลุมทั้ง 3 ประเภทที่บันทึกลง consent_logs ฝั่ง Server)
   // ---------------------------------------------------------------------------
   document.getElementById("btn-consent-continue").addEventListener("click", preventDoubleSubmit(async (e) => {
-    const btn = e.target;
-    const consentAll = document.getElementById("consent-all-checkbox").checked;
-
-    if (!consentAll) {
-      showToast("กรุณายินยอมก่อนดำเนินการต่อ", "error");
-      return;
-    }
-
+    const btn = e.currentTarget;
     btn.disabled = true;
     btn.textContent = "กำลังดำเนินการ...";
     try {
@@ -500,19 +554,16 @@
           data_processing: true,
         },
       });
-
       const badgeText = document.getElementById("line-identity-text");
       badgeText.textContent = result.display_name
         ? `เชื่อมต่อผ่าน LINE: ${result.display_name}`
         : "เชื่อมต่อผ่าน LINE แล้ว";
-
       await reloadJobTypesFromDatabase();
-
       showScreen("form");
     } catch (err) {
-      showToast(err.message || "ยืนยันตัวตนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
+      showToast(toFriendlyErrorMessage(err, "ยืนยันตัวตนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"), "error");
       btn.disabled = false;
-      btn.textContent = "ยินยอมและดำเนินการต่อ";
+      btn.textContent = "ยอมรับและเริ่มฝากงาน";
     }
   }));
 
@@ -558,7 +609,6 @@
     const files = Array.from(e.target.files ?? []);
     const errorEl = document.getElementById("error-photo");
     errorEl.classList.remove("show");
-
     for (const file of files) {
       if (selectedPhotoFiles.length >= MAX_JOB_PHOTOS) {
         showToast(`เลือกรูปได้สูงสุด ${MAX_JOB_PHOTOS} รูป`, "error");
@@ -570,7 +620,7 @@
         continue;
       }
       if (file.size > 5 * 1024 * 1024) {
-        errorEl.textContent = "ไฟล์รูปภาพมีขนาดใหญ่เกิน 5MB";
+        errorEl.textContent = "ไฟล์รูปภาพมีขนาดใหญ่เกิน 5MB กรุณาเลือกรูปอื่น";
         errorEl.classList.add("show");
         continue;
       }
@@ -582,16 +632,18 @@
 
   function renderPhotoPreview() {
     const grid = document.getElementById("photo-preview-grid");
-    grid.innerHTML = "";
+    grid.textContent = "";
     selectedPhotoFiles.forEach((file, idx) => {
       const thumb = document.createElement("div");
       thumb.className = "photo-thumb";
       const img = document.createElement("img");
       img.src = URL.createObjectURL(file);
+      img.alt = `รูปที่ ${idx + 1}`;
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
       removeBtn.className = "remove-btn";
       removeBtn.textContent = "✕";
+      removeBtn.setAttribute("aria-label", `ลบรูปที่ ${idx + 1}`);
       removeBtn.addEventListener("click", () => {
         selectedPhotoFiles.splice(idx, 1);
         renderPhotoPreview();
@@ -600,7 +652,75 @@
       thumb.appendChild(removeBtn);
       grid.appendChild(thumb);
     });
+    renderOrderSummary();
   }
+
+  // ---------------------------------------------------------------------------
+  // สรุปก่อนส่ง (สร้างด้วย textContent ทั้งหมด: ข้อมูลจากลูกค้าไม่ถูกตีเป็น HTML)
+  // ---------------------------------------------------------------------------
+  function getFormValues() {
+    const jobTypeSelect = document.getElementById("select-job-type");
+    const jobTypeOptionEl = jobTypeSelect.selectedOptions[0];
+    const quantitySelect = document.getElementById("select-quantity");
+    const isOverTen = quantitySelect.value === "over10";
+    const isOtherJobType = !!jobTypeOptionEl && jobTypeOptionEl.dataset.allowCustom === "1";
+    return {
+      fullName: document.getElementById("input-full-name").value.trim(),
+      phone: document.getElementById("input-phone").value.trim(),
+      jobTypeId: jobTypeSelect.value,
+      jobTypeLabel: jobTypeSelect.value && jobTypeOptionEl ? jobTypeOptionEl.textContent : "",
+      isOtherJobType,
+      jobTypeOther: document.getElementById("input-job-type-other").value.trim(),
+      description: document.getElementById("input-description").value.trim(),
+      quantityValue: quantitySelect.value,
+      isOverTen,
+      quantityNote: document.getElementById("input-quantity-note").value.trim(),
+      pickupDate: document.getElementById("input-pickup-date").value,
+      pickupTime: document.getElementById("select-pickup-time").value,
+    };
+  }
+
+  function renderOrderSummary() {
+    const box = document.getElementById("order-summary");
+    if (!box) return;
+    const v = getFormValues();
+    const quantityText = v.isOverTen
+      ? (v.quantityNote || "มากกว่า 10 ชิ้น")
+      : (v.quantityValue ? `${v.quantityValue} ชิ้น` : "");
+    const jobTypeText = v.isOtherJobType && v.jobTypeOther ? `${v.jobTypeLabel}: ${v.jobTypeOther}` : v.jobTypeLabel;
+    const pickupText = v.pickupDate
+      ? `${formatThaiDate(v.pickupDate)}${v.pickupTime ? ` เวลา ${v.pickupTime} น.` : ""}`
+      : "";
+    const rows = [
+      ["ชื่อ", v.fullName],
+      ["เบอร์โทร", v.phone],
+      ["ประเภทงาน", jobTypeText],
+      ["จำนวน", quantityText],
+      ["รายละเอียด", v.description],
+      ["รูปถ่าย", selectedPhotoFiles.length > 0 ? `${selectedPhotoFiles.length} รูป` : "ไม่มี"],
+      ["นัดรับ", pickupText],
+    ];
+    box.textContent = "";
+    rows.forEach(([label, value]) => {
+      const row = document.createElement("div");
+      row.className = "summary-row";
+      const l = document.createElement("span");
+      l.className = "s-label";
+      l.textContent = label;
+      const val = document.createElement("span");
+      val.className = "s-value";
+      val.textContent = value && value.length > 0 ? value : "—";
+      row.appendChild(l);
+      row.appendChild(val);
+      box.appendChild(row);
+    });
+  }
+  ["input-full-name", "input-phone", "select-job-type", "input-job-type-other", "input-description",
+    "select-quantity", "input-quantity-note", "input-pickup-date", "select-pickup-time"].forEach((id) => {
+    const el = document.getElementById(id);
+    el.addEventListener("input", renderOrderSummary);
+    el.addEventListener("change", renderOrderSummary);
+  });
 
   // ---------------------------------------------------------------------------
   // Form Validation
@@ -608,7 +728,6 @@
   function clearFieldErrors() {
     document.querySelectorAll(".field-error").forEach((el) => el.classList.remove("show"));
   }
-
   function setFieldError(id, message) {
     const el = document.getElementById(id);
     if (message) el.textContent = message;
@@ -617,55 +736,26 @@
 
   function validateForm() {
     clearFieldErrors();
-    let isValid = true;
-
-    const fullName = document.getElementById("input-full-name").value.trim();
-    if (!fullName) {
-      setFieldError("error-full-name");
-      isValid = false;
+    let firstInvalidId = null;
+    function fail(errorId, inputId, message) {
+      setFieldError(errorId, message);
+      if (!firstInvalidId) firstInvalidId = inputId;
     }
-
-    const phone = document.getElementById("input-phone").value.trim();
-    if (!phone || !isValidThaiPhone(phone)) {
-      setFieldError("error-phone");
-      isValid = false;
+    const v = getFormValues();
+    if (!v.fullName) fail("error-full-name", "input-full-name");
+    if (!v.phone || !isValidThaiPhone(v.phone)) fail("error-phone", "input-phone");
+    if (!v.jobTypeId) fail("error-job-type", "select-job-type");
+    if (v.isOtherJobType && !v.jobTypeOther) fail("error-job-type-other", "input-job-type-other");
+    if (!v.quantityValue) fail("error-quantity", "select-quantity");
+    if (v.isOverTen && !v.quantityNote) fail("error-quantity-note", "input-quantity-note");
+    if (!v.pickupDate || v.pickupDate < getTodayBangkokISODate()) fail("error-pickup-date", "input-pickup-date");
+    if (!v.pickupTime) fail("error-pickup-time", "select-pickup-time");
+    if (firstInvalidId) {
+      document.getElementById(firstInvalidId).scrollIntoView({ behavior: "smooth", block: "center" });
+      document.getElementById(firstInvalidId).focus({ preventScroll: true });
+      return false;
     }
-
-    const jobTypeSelect = document.getElementById("select-job-type");
-    if (!jobTypeSelect.value) {
-      setFieldError("error-job-type");
-      isValid = false;
-    }
-    const jobTypeOptionEl = jobTypeSelect.selectedOptions[0];
-    const isOtherJobType = jobTypeOptionEl && jobTypeOptionEl.dataset.allowCustom === "1";
-    if (isOtherJobType && !document.getElementById("input-job-type-other").value.trim()) {
-      setFieldError("error-job-type-other");
-      isValid = false;
-    }
-
-    const quantitySelect = document.getElementById("select-quantity");
-    if (!quantitySelect.value) {
-      setFieldError("error-quantity");
-      isValid = false;
-    }
-    if (quantitySelect.value === "over10" && !document.getElementById("input-quantity-note").value.trim()) {
-      setFieldError("error-quantity-note");
-      isValid = false;
-    }
-
-    const pickupDate = document.getElementById("input-pickup-date").value;
-    if (!pickupDate || pickupDate < getTodayBangkokISODate()) {
-      setFieldError("error-pickup-date");
-      isValid = false;
-    }
-
-    const pickupTime = document.getElementById("select-pickup-time").value;
-    if (!pickupTime) {
-      setFieldError("error-pickup-time");
-      isValid = false;
-    }
-
-    return isValid;
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -673,10 +763,9 @@
   // ---------------------------------------------------------------------------
   document.getElementById("btn-submit-job").addEventListener("click", preventDoubleSubmit(async () => {
     if (!navigator.onLine) {
-      showToast("ไม่มีสัญญาณอินเทอร์เน็ต กรุณาตรวจสอบแล้วลองใหม่อีกครั้ง", "error");
+      showToast("ไม่มีสัญญาณอินเทอร์เน็ต ยังไม่ได้ส่งงาน กรุณาตรวจสอบแล้วลองใหม่อีกครั้ง", "error");
       return;
     }
-
     if (!validateForm()) {
       showToast("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน", "error");
       return;
@@ -685,34 +774,35 @@
     const submitBtn = document.getElementById("btn-submit-job");
     const statusText = document.getElementById("submit-status-text");
     submitBtn.disabled = true;
-    submitBtn.textContent = "กำลังส่งข้อมูล...";
+    submitBtn.textContent = "⏳ กำลังส่งงาน...";
     statusText.textContent = "";
 
-    const jobTypeSelect = document.getElementById("select-job-type");
-    const jobTypeOptionEl = jobTypeSelect.selectedOptions[0];
-    const quantitySelect = document.getElementById("select-quantity");
-    const isOverTen = quantitySelect.value === "over10";
+    const v = getFormValues();
+    if (!submissionId) submissionId = crypto.randomUUID();
 
     const payload = {
-      client_submission_id: crypto.randomUUID(),
-      full_name: document.getElementById("input-full-name").value.trim(),
-      phone: document.getElementById("input-phone").value.trim(),
-      job_type_id: jobTypeSelect.value,
-      job_type_other: document.getElementById("input-job-type-other").value.trim(),
-      description: document.getElementById("input-description").value.trim(),
-      quantity: isOverTen ? null : Number(quantitySelect.value),
-      quantity_is_over_ten: isOverTen,
-      quantity_note: document.getElementById("input-quantity-note").value.trim(),
-      requested_pickup_date: document.getElementById("input-pickup-date").value,
-      requested_pickup_time_slot: document.getElementById("select-pickup-time").value,
-      customer_note: document.getElementById("input-customer-note").value.trim(),
+      client_submission_id: submissionId,
+      full_name: v.fullName,
+      phone: v.phone,
+      job_type_id: v.jobTypeId,
+      job_type_other: v.jobTypeOther,
+      description: v.description,
+      quantity: v.isOverTen ? null : Number(v.quantityValue),
+      quantity_is_over_ten: v.isOverTen,
+      quantity_note: v.quantityNote,
+      requested_pickup_date: v.pickupDate,
+      requested_pickup_time_slot: v.pickupTime,
+      customer_note: null, // เลิกใช้ช่องหมายเหตุแล้ว (ส่ง null เพื่อ Compatibility กับฐานข้อมูล)
     };
 
     try {
       const result = await submitJob(payload);
       createdJobId = result.job_id;
-
+      const pickupDate = result.pickup_date ?? v.pickupDate;
+      const pickupTime = (result.pickup_time ?? v.pickupTime ?? "").slice(0, 5);
       document.getElementById("success-job-number").textContent = result.job_number;
+      document.getElementById("success-pickup").textContent =
+        `📅 นัดรับวันที่ ${formatThaiDate(pickupDate)}${pickupTime ? ` เวลา ${pickupTime} น.` : ""}`;
       document.getElementById("success-urgent-note").classList.toggle("hidden", !result.is_urgent);
       showScreen("success");
 
@@ -735,17 +825,15 @@
         }
       }
     } catch (err) {
-      showToast(err.message || "ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error");
-      statusText.textContent = "หากปัญหายังคงอยู่ กรุณาติดต่อร้านโดยตรง";
+      showToast("ยังไม่ได้ส่งงาน: " + toFriendlyErrorMessage(err, "ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"), "error");
+      statusText.textContent = "กดปุ่ม \"📤 ส่งงานให้ร้าน\" อีกครั้งได้เลย (ระบบจะไม่สร้างงานซ้ำ) หากยังไม่สำเร็จ กรุณาติดต่อร้านโดยตรง";
       submitBtn.disabled = false;
-      submitBtn.textContent = "ส่งข้อมูลฝากงาน";
+      submitBtn.textContent = "📤 ส่งงานให้ร้าน";
     }
   }));
 
   // ---------------------------------------------------------------------------
-  // Close Button (ทำงานสมบูรณ์เฉพาะเปิดผ่านแอป LINE จริงบนมือถือ — ถ้าเปิดผ่าน
-  // Browser ปกติ (ทดสอบบนคอมพิวเตอร์) จะแสดงข้อความแทนเพราะ LIFF ไม่อนุญาตให้
-  // ปิดหน้าต่าง Browser ทั่วไปได้)
+  // Close Button (ทำงานสมบูรณ์เฉพาะเปิดผ่านแอป LINE จริงบนมือถือ)
   // ---------------------------------------------------------------------------
   document.getElementById("btn-close-liff").addEventListener("click", () => {
     const wasInClient = !!(window.liff && window.liff.isInClient && window.liff.isInClient());

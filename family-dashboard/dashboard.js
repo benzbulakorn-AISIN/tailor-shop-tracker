@@ -17,7 +17,7 @@ import {
 import {
   showToast, preventDoubleSubmit, isValidPinFormat,
   formatThaiDate, formatThaiDateTime, getTodayBangkokISODate,
-  generateIdempotencyKey,
+  generateIdempotencyKey, escapeHtml, toFriendlyErrorMessage,
 } from "../shared/utils.js";
 import {
   fetchJobsWindow, fetchJobImages, fetchJobIdsWithFailedNotifications, attachFailedNotificationFlag,
@@ -28,7 +28,10 @@ import {
 } from "../shared/shop-actions-client.js";
 import { setJobPricing, recordPayment, voidPayment } from "../shared/payment-client.js";
 import { retryNotification } from "../shared/notification-client.js";
-import { computeDashboardCards, filterJobs, buildCalendarMonthGrid, groupJobsByConfirmedDate } from "../shared/job-aggregation.js";
+import {
+  computeDashboardCards, filterJobs, buildCalendarMonthGrid, groupJobsByConfirmedDate,
+  sortJobsForOwner, getUrgencyTag, getEffectivePickupDate, getEffectivePickupTime, computeOwnerSummary,
+} from "../shared/job-aggregation.js";
 import { PICKUP_TIME_SLOTS, JOB_TYPES_FALLBACK } from "../shared/job-constants.js";
 import { getSupabaseClient } from "../shared/supabase-client.js";
 
@@ -42,9 +45,9 @@ function getSimplifiedStatusKey(status) {
   return "received"; // pending_confirmation, waiting, in_progress
 }
 const SIMPLIFIED_STATUS_DISPLAY = {
-  received: { label: "รับเข้าระบบ", icon: "📋", color: "#1a73e8" },
+  received: { label: "รับเข้าระบบ", icon: "📋", color: "#1b2a49" },
   completed: { label: "เสร็จแล้ว", icon: "✅", color: "#1e8e3e" },
-  picked_up: { label: "รับแล้ว", icon: "📦", color: "#5f6368" },
+  picked_up: { label: "รับแล้ว/ปิดงาน", icon: "📦", color: "#5f6368" },
   cancelled: { label: "ยกเลิก", icon: "🚫", color: "#d93025" },
 };
 function getStatusDisplay(status) {
@@ -92,6 +95,18 @@ const state = {
   currentJobId: null,
 };
 const shopUserMap = new Map();
+
+// Idempotency Key ที่คงที่ต่อ (งาน + ยอด): ถ้าบันทึกเงินสำเร็จแต่เปลี่ยนสถานะไม่สำเร็จ (หรือเน็ตหลุด)
+// แล้วกดใหม่ จะใช้ Key เดิม -> Server ไม่สร้างรายการรับเงินซ้ำ (เดิมสร้าง Key ใหม่ทุกครั้งที่กด)
+const pendingPaymentKeys = new Map();
+function getStablePaymentKey(jobId, amount) {
+  const id = `${jobId}:${amount}`;
+  if (!pendingPaymentKeys.has(id)) pendingPaymentKeys.set(id, generateIdempotencyKey("pay"));
+  return pendingPaymentKeys.get(id);
+}
+function clearStablePaymentKey(jobId, amount) {
+  pendingPaymentKeys.delete(`${jobId}:${amount}`);
+}
 
 // ============================================================================
 // Screen Elements
@@ -143,7 +158,7 @@ async function loadIdentities() {
       listEl.appendChild(btn);
     });
   } catch (err) {
-    showToast(err.message, "error");
+    showToast(toFriendlyErrorMessage(err), "error");
   }
 }
 const handleLogin = preventDoubleSubmit(async () => {
@@ -168,7 +183,7 @@ const handleLogin = preventDoubleSubmit(async () => {
     });
     pinInput.value = "";
   } catch (err) {
-    showToast(err.message, "error");
+    showToast(toFriendlyErrorMessage(err), "error");
   } finally {
     loginBtn.disabled = false;
   }
@@ -319,13 +334,18 @@ document.getElementById("btn-notif-failed").addEventListener("click", () => {
 // "urgent" = ต้องดูวันนี้ (การ์ดใหญ่ เรียงแนวตั้ง) และ "upcoming" = กำลังจะถึง (การ์ดเล็กกว่า)
 // ยังคงมีทั้ง 6 การ์ดเท่าเดิม ไม่มีการเพิ่ม/ลดจำนวนปุ่ม เพียงจัดลำดับและเน้นสีใหม่
 const CARD_DEFINITIONS = [
-  { key: "overdue", label: "งานเลยกำหนด", icon: "⚠️", group: "urgent", tone: "red" },
-  { key: "dueToday", label: "งานวันนี้", icon: "📅", group: "urgent", tone: "blue" },
-  { key: "pendingConfirmation", label: "งานใหม่รอยืนยัน", icon: "🆕", group: "urgent", tone: "orange" },
-  { key: "dueTomorrow", label: "งานพรุ่งนี้", icon: "📆", group: "upcoming", tone: "neutral" },
-  { key: "dueWithin3Days", label: "งานภายใน 3 วัน", icon: "⏱️", group: "upcoming", tone: "neutral" },
-  { key: "completedWaitingPickup", label: "เสร็จรอรับ", icon: "📦", group: "upcoming", tone: "green" },
+  // หน้าหลักเหลือ 2 ใบ: สิ่งที่เจ้าของร้านต้องทำจริง
+  { key: "todo", label: "งานที่ต้องทำ", icon: "📋", group: "main", tone: "blue" },
+  { key: "completedWaitingPickup", label: "งานเสร็จรอรับ", icon: "📦", group: "main", tone: "green" },
+  // การ์ดอื่นย้ายไป "ดูเพิ่มเติม" (ยุบไว้)
+  { key: "dueTomorrow", label: "งานพรุ่งนี้", icon: "📆", group: "more", tone: "neutral" },
+  { key: "dueWithin3Days", label: "งานภายใน 3 วัน", icon: "⏱️", group: "more", tone: "neutral" },
 ];
+function getAllCardData(jobs) {
+  const base = computeDashboardCards(jobs);
+  const owner = computeOwnerSummary(jobs); // todo = วันนี้ + เลยกำหนด (นับจากวันนัดที่ใช้จริง รวมงานเก่า)
+  return { ...base, todo: owner.todo, completedWaitingPickup: owner.completedWaitingPickup };
+}
 function buildSummaryCard(def, cardData) {
   const jobs = cardData[def.key] ?? [];
   const card = document.createElement("div");
@@ -347,32 +367,31 @@ function buildSummaryCard(def, cardData) {
   return card;
 }
 function renderSummaryCards() {
-  const cardData = computeDashboardCards(state.allJobs);
+  const cardData = getAllCardData(state.allJobs);
   const container = document.getElementById("summary-grid");
   container.innerHTML = "";
 
-  const urgentTitle = document.createElement("div");
-  urgentTitle.className = "summary-group-title";
-  urgentTitle.textContent = "📌 ต้องดูวันนี้";
-  const urgentGrid = document.createElement("div");
-  urgentGrid.className = "summary-grid summary-grid-main";
-  CARD_DEFINITIONS.filter((d) => d.group === "urgent").forEach((def) => {
-    urgentGrid.appendChild(buildSummaryCard(def, cardData));
+  const mainGrid = document.createElement("div");
+  mainGrid.className = "summary-grid summary-grid-main";
+  CARD_DEFINITIONS.filter((d) => d.group === "main").forEach((def) => {
+    mainGrid.appendChild(buildSummaryCard(def, cardData));
   });
+  container.appendChild(mainGrid);
 
-  const upcomingTitle = document.createElement("div");
-  upcomingTitle.className = "summary-group-title";
-  upcomingTitle.textContent = "🗓️ งานที่กำลังจะถึง";
-  const upcomingGrid = document.createElement("div");
-  upcomingGrid.className = "summary-grid summary-grid-sub";
-  CARD_DEFINITIONS.filter((d) => d.group === "upcoming").forEach((def) => {
-    upcomingGrid.appendChild(buildSummaryCard(def, cardData));
+  const moreDetails = document.createElement("details");
+  moreDetails.className = "summary-more";
+  moreDetails.open = !!CARD_DEFINITIONS.find((d) => d.group === "more" && d.key === state.activeCard);
+  const moreSummary = document.createElement("summary");
+  moreSummary.textContent = "ดูเพิ่มเติม";
+  moreSummary.style.cssText = "min-height:44px;display:flex;align-items:center;cursor:pointer;font-weight:600;margin-top:8px;";
+  const moreGrid = document.createElement("div");
+  moreGrid.className = "summary-grid summary-grid-sub";
+  CARD_DEFINITIONS.filter((d) => d.group === "more").forEach((def) => {
+    moreGrid.appendChild(buildSummaryCard(def, cardData));
   });
-
-  container.appendChild(urgentTitle);
-  container.appendChild(urgentGrid);
-  container.appendChild(upcomingTitle);
-  container.appendChild(upcomingGrid);
+  moreDetails.appendChild(moreSummary);
+  moreDetails.appendChild(moreGrid);
+  container.appendChild(moreDetails);
 }
 function getCardFilteredJobs() {
   if (state.showNotifFailedOnly) {
@@ -380,7 +399,7 @@ function getCardFilteredJobs() {
     return cardData.notificationFailed ?? [];
   }
   if (!state.activeCard) return state.allJobs;
-  const cardData = computeDashboardCards(state.allJobs);
+  const cardData = getAllCardData(state.allJobs);
   return cardData[state.activeCard] ?? [];
 }
 
@@ -419,6 +438,7 @@ function clearAllFilters() {
   renderAll();
 }
 function bindFilterInputs() {
+  document.getElementById("search-input").placeholder = "🔎 ค้นหาเลขงาน ชื่อลูกค้า หรือเบอร์โทร";
   document.getElementById("search-input").addEventListener("input", (e) => {
     state.filters.searchText = e.target.value;
     renderJobList();
@@ -516,9 +536,10 @@ function renderJobList() {
     jobs = jobs.filter((j) => j.status !== "picked_up");
   }
   if (state.selectedCalendarDate) {
-    jobs = jobs.filter((j) => j.confirmed_pickup_date === state.selectedCalendarDate);
+    jobs = jobs.filter((j) => getEffectivePickupDate(j) === state.selectedCalendarDate);
   }
   jobs = filterJobs(jobs, state.filters);
+  jobs = sortJobsForOwner(jobs); // เลยกำหนด -> วันนี้ -> วันนัดใกล้สุด -> ปิดงาน/ยกเลิกท้ายสุด
   const listEl = document.getElementById("job-list");
   const emptyEl = document.getElementById("job-list-empty");
   document.getElementById("job-count").textContent = jobs.length;
@@ -530,21 +551,23 @@ function renderJobList() {
   emptyEl.classList.add("hidden");
   jobs.forEach((job) => {
     const statusInfo = getStatusDisplay(job.status);
+    const urgency = getUrgencyTag(job);
     const card = document.createElement("div");
     card.className = "job-card";
     card.innerHTML = `
-      ${job.customers?.phone ? `<a href="tel:${job.customers.phone}" class="quick-call-btn" title="โทรหาลูกค้า" onclick="event.stopPropagation()">📞</a>` : ""}
+      ${job.customers?.phone ? `<a href="tel:${escapeHtml(job.customers.phone)}" class="quick-call-btn" title="โทรหาลูกค้า" onclick="event.stopPropagation()">📞</a>` : ""}
       <div class="job-card-top">
         <div>
-          <div class="job-number">${job.job_number}</div>
-          <div class="customer-name">${job.customers?.full_name ?? "-"}</div>
+          <div class="job-number">${escapeHtml(job.job_number)}</div>
+          <div class="customer-name">${escapeHtml(job.customers?.full_name ?? "-")}</div>
         </div>
         <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span>
       </div>
       <div class="job-card-meta">
-        <span>✂️ ${job.job_types?.label_th ?? job.job_type_other ?? "-"}</span>
-        ${job.confirmed_pickup_date ? `<span>📅 ${formatThaiDate(job.confirmed_pickup_date)} ${job.confirmed_pickup_time ?? ""} น.</span>` : `<span>📅 ต้องการ ${formatThaiDate(job.requested_pickup_date)}</span>`}
-        ${job.is_urgent ? '<span class="urgent-tag">🚨 ด่วน</span>' : ""}
+        <span>✂️ ${escapeHtml(job.job_types?.label_th ?? job.job_type_other ?? "-")}</span>
+        ${getEffectivePickupDate(job) ? `<span>📅 ${formatThaiDate(getEffectivePickupDate(job))} ${escapeHtml(getEffectivePickupTime(job).slice(0, 5))} น.</span>` : ""}
+        ${urgency === "overdue" ? '<span class="urgent-tag">⚠️ เลยกำหนด</span>' : ""}
+        ${urgency === "today" ? '<span class="urgent-tag" style="background:#e3e9f5;color:#1b2a49;">📅 วันนี้</span>' : ""}
         ${job._hasFailedNotification ? '<span class="urgent-tag" style="background:#fff3e0;color:#e65100;">📵 LINE ไม่สำเร็จ</span>' : ""}
       </div>
     `;
@@ -574,6 +597,11 @@ function showConfirmDialog({ text, requireReason = false, confirmLabel = "ยื
     const okBtn = document.getElementById("confirm-dialog-ok");
     const cancelBtn = document.getElementById("confirm-dialog-cancel");
     textEl.textContent = text;
+    textEl.style.whiteSpace = "pre-line";
+    textEl.style.fontSize = "1.15rem";
+    textEl.style.lineHeight = "1.6";
+    okBtn.style.minHeight = "56px";
+    cancelBtn.style.minHeight = "52px";
     reasonEl.value = "";
     reasonEl.classList.toggle("hidden", !requireReason);
     okBtn.textContent = confirmLabel;
@@ -650,6 +678,7 @@ const NOTIFICATION_STATUS_LABELS = {
   pending: { label: "รอส่ง", icon: "⏳", color: "#f9a825" },
   sent: { label: "ส่งสำเร็จ", icon: "✅", color: "#1e8e3e" },
   failed: { label: "ส่งไม่สำเร็จ", icon: "📵", color: "#d93025" },
+  cancelled: { label: "ยกเลิกแล้ว", icon: "🚫", color: "#5f6368" },
 };
 const NOTIFICATION_TYPE_LABELS = {
   job_received: "รับคำขอฝากงาน",
@@ -659,7 +688,48 @@ const NOTIFICATION_TYPE_LABELS = {
   reminder: "แจ้งเตือน",
   other: "อื่น ๆ",
 };
-async function openJobModal(jobId) {
+const RESCHEDULE_REASON_OPTIONS = ["งานต้องใช้เวลาเพิ่ม", "รอวัสดุ", "ร้านขอเลื่อนนัด", "อื่น ๆ"];
+const LINE_EVENT_LABELS = {
+  completed: "แจ้งงานเสร็จ",
+  revoked: "แจ้งแก้ไข (ขออภัย)",
+  appointment_changed: "แจ้งเปลี่ยนนัด",
+  appointment_confirmed: "แจ้งยืนยันนัด",
+  job_received: "แจ้งรับงาน",
+};
+
+// ============================================================================
+// ผลการทำรายการ: แยก "บันทึกสำเร็จหรือไม่" ออกจาก "ส่ง LINE สำเร็จหรือไม่" (ใช้ Icon + ข้อความ ไม่ใช้สีอย่างเดียว)
+// ============================================================================
+function buildLineResultText(line) {
+  if (!line || !line.event) return line?.note ? `ℹ️ ${line.note}` : "";
+  const label = LINE_EVENT_LABELS[line.event] ?? "แจ้งลูกค้า";
+  if (line.status === "sent") return `📨 ส่ง LINE สำเร็จ (${label})`;
+  if (line.status === "pending") return `⏳ LINE กำลังส่ง (${label}) ดูสถานะในประวัติแจ้งเตือนด้านล่าง`;
+  return `📵 ส่ง LINE ไม่สำเร็จ (${label}) กด "🔁 ลองส่งใหม่" ในประวัติแจ้งเตือนด้านล่างได้`;
+}
+function buildActionResult(savedText, line) {
+  const lineText = buildLineResultText(line);
+  const lineFailed = !!line && !!line.event && line.status !== "sent" && line.status !== "pending";
+  return { savedText, lineText, warn: lineFailed };
+}
+function renderActionResultHtml(result) {
+  if (!result) return "";
+  const border = result.warn ? "#e65100" : "#1e8e3e";
+  const bg = result.warn ? "#fff3e0" : "#e6f4ea";
+  return `
+    <div id="action-result" role="status" aria-live="polite"
+         style="border:2px solid ${border};background:${bg};border-radius:14px;padding:12px 14px;margin:10px 0;font-size:1.05rem;font-weight:600;line-height:1.6;">
+      <div>${escapeHtml(result.savedText)}</div>
+      ${result.lineText ? `<div>${escapeHtml(result.lineText)}</div>` : ""}
+    </div>`;
+}
+
+function getJobTotalPrice(job) {
+  const total = job.price_final ?? job.price_estimate;
+  return total == null ? null : Number(total);
+}
+
+async function openJobModal(jobId, actionResult = null) {
   state.currentJobId = jobId;
   const job = state.allJobs.find((j) => j.id === jobId);
   if (!job) return;
@@ -687,42 +757,40 @@ async function openJobModal(jobId) {
   const statusInfo = getStatusDisplay(job.status);
   const quantityText = job.quantity_is_over_ten ? (job.quantity_note ?? "มากกว่า 10 ชิ้น") : `${job.quantity} ชิ้น`;
   const totalPaid = computeTotalPaid(paymentTransactions);
-  const balance = job.price_final != null ? job.price_final - totalPaid : null;
-  const isFullyPaid = job.price_estimate != null && balance != null && balance <= 0;
-  const isPendingConfirmation = job.status === "pending_confirmation";
+  const totalPrice = getJobTotalPrice(job);
+  const balance = totalPrice != null ? Math.max(totalPrice - totalPaid, 0) : null;
   sheet.innerHTML = `
     <button class="modal-close-btn" id="modal-close-btn">✕ ปิด</button>
-    <h2>${job.job_number} <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span></h2>
+    <h2>${escapeHtml(job.job_number)} <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span></h2>
+    ${renderActionResultHtml(actionResult)}
     ${buildStepperHtml(job.status)}
     <div class="modal-section" style="border-top:none;margin-top:0;padding-top:0;">
       <h3>👤 ข้อมูลลูกค้า</h3>
-      <div class="info-row"><span class="label">ชื่อ</span><span class="value">${job.customers?.full_name ?? "-"}</span></div>
-      <div class="info-row"><span class="label">เบอร์โทร</span><span class="value">${job.customers?.phone ?? "-"}</span></div>
-      ${job.customers?.phone ? `<a href="tel:${job.customers.phone}" class="btn btn-secondary" style="margin-top:8px;">📞 โทรหาลูกค้า</a>` : ""}
+      <div class="info-row"><span class="label">ชื่อ</span><span class="value">${escapeHtml(job.customers?.full_name ?? "-")}</span></div>
+      <div class="info-row"><span class="label">เบอร์โทร</span><span class="value">${escapeHtml(job.customers?.phone ?? "-")}</span></div>
+      ${job.customers?.phone ? `<a href="tel:${escapeHtml(job.customers.phone)}" class="btn btn-secondary" style="margin-top:8px;">📞 โทรหาลูกค้า</a>` : ""}
+    </div>
+    <div class="modal-section" id="appointment-section"></div>
+    <div class="modal-section" id="status-section">
+      <h3>🔄 สถานะงาน</h3>
+      <div id="status-buttons"></div>
     </div>
     <div class="modal-section">
       <h3>✂️ ข้อมูลงาน</h3>
-      <div class="info-row"><span class="label">ประเภทงาน</span><span class="value">${job.job_types?.label_th ?? job.job_type_other ?? "-"}</span></div>
-      <div class="info-row"><span class="label">จำนวน</span><span class="value">${quantityText}</span></div>
-      <div class="info-row"><span class="label">รายละเอียด</span><span class="value">${job.description ?? "-"}</span></div>
-      <div class="info-row"><span class="label">หมายเหตุจากลูกค้า</span><span class="value">${job.customer_note ?? "-"}</span></div>
+      <div class="info-row"><span class="label">ประเภทงาน</span><span class="value">${escapeHtml(job.job_types?.label_th ?? job.job_type_other ?? "-")}</span></div>
+      <div class="info-row"><span class="label">จำนวน</span><span class="value">${escapeHtml(quantityText)}</span></div>
+      <div class="info-row"><span class="label">รายละเอียด</span><span class="value">${escapeHtml(job.description ?? "-")}</span></div>
+      ${job.customer_note ? `<div class="info-row"><span class="label">หมายเหตุ (งานเก่า)</span><span class="value">${escapeHtml(job.customer_note)}</span></div>` : ""}
       <div class="info-row"><span class="label">วันที่ฝากงาน</span><span class="value">${formatThaiDate(job.created_at)}</span></div>
-      <div class="info-row"><span class="label">วันที่ลูกค้าต้องการรับ</span><span class="value">${formatThaiDate(job.requested_pickup_date)} ${job.requested_pickup_time_slot} น.</span></div>
-      ${job.confirmed_pickup_date ? `<div class="info-row"><span class="label">วันนัดที่ร้านยืนยัน</span><span class="value">${formatThaiDate(job.confirmed_pickup_date)} ${job.confirmed_pickup_time} น.</span></div>` : ""}
       ${job.is_urgent ? `<div class="urgent-tag" style="margin-top:6px;display:inline-block;">🚨 งานด่วน</div>` : ""}
     </div>
     ${images.length > 0 ? `
     <div class="modal-section">
       <h3>📷 รูปภาพ</h3>
       <div class="photo-grid-view">
-        ${images.map((img) => `<img src="${img.signedUrl ?? ""}" alt="รูปงาน" />`).join("")}
+        ${images.map((img) => `<img src="${escapeHtml(img.signedUrl ?? "")}" alt="รูปงาน" />`).join("")}
       </div>
     </div>` : ""}
-    <div class="modal-section" id="appointment-section"></div>
-    <div class="modal-section" id="status-section">
-      <h3>🔄 สถานะงาน</h3>
-      <div id="status-buttons"></div>
-    </div>
     <div class="modal-section" id="payment-section"></div>
     <div class="modal-section" id="notification-history-section"></div>
     ${isAdminOnly ? `
@@ -732,10 +800,10 @@ async function openJobModal(jobId) {
     </div>` : ""}
   `;
   document.getElementById("modal-close-btn").addEventListener("click", closeJobModal);
-  currentStepperScrollTarget = isPendingConfirmation ? "appointment-section" : "status-section";
-  renderAppointmentSection(job, isOwnerOrAdmin, isPendingConfirmation);
-  renderStatusButtons(job, balance);
-  renderPaymentSection(job, paymentTransactions, totalPaid, balance, isFullyPaid, isOwnerOrAdmin, isPendingConfirmation);
+  currentStepperScrollTarget = "status-section";
+  renderAppointmentSection(job, isOwnerOrAdmin, totalPrice);
+  renderStatusButtons(job, { balance, totalPrice, totalPaid });
+  renderPaymentSection(job, paymentTransactions, { totalPaid, totalPrice, balance }, isOwnerOrAdmin);
   renderNotificationHistorySection(customerNotifications, isOwnerOrAdmin, job.id);
   const archiveBtn = document.getElementById("btn-archive-job");
   if (archiveBtn) {
@@ -752,14 +820,14 @@ async function openJobModal(jobId) {
         await refreshJobs();
         closeJobModal();
       } catch (err) {
-        showToast(err.message, "error");
+        showToast(toFriendlyErrorMessage(err), "error");
       }
     }));
   }
 }
 
 // ============================================================================
-// Notification History Section
+// Notification History Section (ยุบไว้ จะเปิดเองเฉพาะเมื่อมีรายการส่งไม่สำเร็จ)
 // ============================================================================
 function renderNotificationHistorySection(notifications, isOwnerOrAdmin, jobId) {
   const section = document.getElementById("notification-history-section");
@@ -770,26 +838,30 @@ function renderNotificationHistorySection(notifications, isOwnerOrAdmin, jobId) 
     `;
     return;
   }
+  const hasFailed = notifications.some((n) => n.status === "failed");
   section.innerHTML = `
-    <h3>📨 ประวัติการแจ้งเตือน LINE</h3>
-    ${notifications.map((n) => {
-      const statusInfo = NOTIFICATION_STATUS_LABELS[n.status] ?? { label: n.status, icon: "❔", color: "#999" };
-      const typeLabel = NOTIFICATION_TYPE_LABELS[n.notification_type] ?? n.notification_type;
-      return `
+    <details ${hasFailed ? "open" : ""}>
+      <summary style="font-weight:700;font-size:1.05rem;min-height:44px;display:flex;align-items:center;cursor:pointer;">
+        ${hasFailed ? "📵" : "📨"} ประวัติการแจ้งเตือน LINE (${notifications.length})
+      </summary>
+      ${notifications.map((n) => {
+        const statusInfo = NOTIFICATION_STATUS_LABELS[n.status] ?? { label: n.status, icon: "❔", color: "#5f6368" };
+        const typeLabel = NOTIFICATION_TYPE_LABELS[n.notification_type] ?? n.notification_type;
+        return `
         <div class="payment-tx-card">
           <div class="payment-tx-top">
-            <span>${typeLabel}</span>
-            <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${statusInfo.label}</span>
+            <span>${escapeHtml(typeLabel)}</span>
+            <span class="status-badge" style="background:${statusInfo.color}">${statusInfo.icon} ${escapeHtml(statusInfo.label)}</span>
           </div>
           <div class="payment-tx-meta">
             ${formatThaiDateTime(n.created_at)}
-            ${n.status === "failed" && n.error_message ? `<br/>สาเหตุ: ${n.error_message}` : ""}
+            ${n.status === "failed" && n.error_message ? `<br/>สาเหตุ: ${escapeHtml(n.error_message)}` : ""}
             ${n.retry_count > 0 ? `<br/>ลองส่งใหม่แล้ว ${n.retry_count} ครั้ง` : ""}
           </div>
-          ${n.status === "failed" && isOwnerOrAdmin ? `<button class="btn btn-secondary btn-sm" data-retry-notif-id="${n.id}" style="margin-top:8px;">🔁 ลองส่งใหม่</button>` : ""}
-        </div>
-      `;
-    }).join("")}
+          ${n.status === "failed" && isOwnerOrAdmin ? `<button class="btn btn-secondary btn-sm" data-retry-notif-id="${escapeHtml(n.id)}" style="margin-top:8px;">🔁 ลองส่งใหม่</button>` : ""}
+        </div>`;
+      }).join("")}
+    </details>
   `;
   if (isOwnerOrAdmin) {
     section.querySelectorAll("[data-retry-notif-id]").forEach((btn) => {
@@ -798,11 +870,12 @@ function renderNotificationHistorySection(notifications, isOwnerOrAdmin, jobId) 
         btn.disabled = true;
         btn.textContent = "กำลังลองส่งใหม่...";
         try {
-          await retryNotification({ accessToken: getAccessToken(), notificationId: notifId, notificationTable: "customer" });
-          showToast("ส่งข้อความสำเร็จ", "success");
+          const res = await retryNotification({ accessToken: getAccessToken(), notificationId: notifId, notificationTable: "customer" });
+          showToast(res?.already_sent ? "ข้อความนี้ส่งสำเร็จไปแล้ว ไม่ส่งซ้ำ" : "ส่งข้อความสำเร็จ", "success");
+          await refreshJobs();
           openJobModal(jobId);
         } catch (err) {
-          showToast(err.message, "error");
+          showToast(toFriendlyErrorMessage(err), "error");
           btn.disabled = false;
           btn.textContent = "🔁 ลองส่งใหม่";
         }
@@ -812,222 +885,180 @@ function renderNotificationHistorySection(notifications, isOwnerOrAdmin, jobId) 
 }
 
 // ============================================================================
-// Appointment Section
+// Appointment Section — แสดงนัดรับให้เห็นทันที และแก้ได้ในกล่องที่ยุบไว้ (ปุ่มบันทึกปุ่มเดียว)
 // ============================================================================
-function renderAppointmentSection(job, isOwnerOrAdmin, isPendingConfirmation) {
+function renderAppointmentSection(job, isOwnerOrAdmin, totalPrice) {
   const section = document.getElementById("appointment-section");
-  if (!isOwnerOrAdmin) {
-    if (isPendingConfirmation) {
-      section.innerHTML = `<div class="warning-box">⏳ งานนี้รอการยืนยันนัดจากเจ้าของร้านหรือผู้ดูแลระบบ</div>`;
-      return;
-    }
-    section.innerHTML = `
-      <h3>💰 ราคาและวันนัด</h3>
-      <div class="info-row"><span class="label">ราคาประเมิน</span><span class="value">${job.price_estimate != null ? job.price_estimate.toLocaleString() + " บาท" : "ยังไม่ระบุ"}</span></div>
-      ${job.confirmed_pickup_date ? `<div class="info-row"><span class="label">วันนัดรับ</span><span class="value">${formatThaiDate(job.confirmed_pickup_date)} ${job.confirmed_pickup_time} น.</span></div>` : ""}
-    `;
+  const currentDate = getEffectivePickupDate(job);
+  const currentTime = getEffectivePickupTime(job).slice(0, 5);
+  const isClosed = job.status === "picked_up" || job.status === "cancelled";
+  const pickupNowHtml = currentDate
+    ? `<div class="pickup-now" style="background:#e3e9f5;border-radius:14px;padding:12px 14px;font-size:1.15rem;font-weight:700;line-height:1.5;">📅 นัดรับ ${escapeHtml(formatThaiDate(currentDate))}${currentTime ? ` เวลา ${escapeHtml(currentTime)} น.` : ""}</div>`
+    : `<div class="warning-box">⚠️ ยังไม่มีวันนัดรับ</div>`;
+  const priceHtml = `<div class="info-row" style="margin-top:8px;"><span class="label">💰 ราคา</span><span class="value">${totalPrice != null ? escapeHtml(totalPrice.toLocaleString()) + " บาท" : "ยังไม่ระบุ"}</span></div>`;
+
+  if (!isOwnerOrAdmin || isClosed) {
+    section.innerHTML = `<h3>📅 นัดรับและราคา</h3>${pickupNowHtml}${priceHtml}`;
     return;
   }
-  if (isPendingConfirmation) {
-    section.innerHTML = `
-      <h3>✅ ยืนยันรับงาน</h3>
-      <label style="font-weight:600;">ราคาประเมิน (บาท)</label>
-      <input type="number" min="0" step="0.01" class="price-input" id="price-estimate-input" placeholder="ยังไม่ระบุ" />
-      <label style="font-weight:600;">เงินมัดจำ (บาท)</label>
-      <div class="quick-percent-row">
-        <button type="button" class="btn btn-secondary" id="btn-deposit-25">มัดจำ 25%</button>
-        <button type="button" class="btn btn-secondary" id="btn-deposit-50">มัดจำ 50%</button>
-      </div>
-      <input type="number" min="0" step="0.01" class="price-input" id="deposit-amount-input" value="0" />
-      <label style="font-weight:600;">วันที่ร้านยืนยัน</label>
-      <input type="date" class="confirm-date-input" id="confirm-date-input" value="${job.requested_pickup_date}" />
-      <label style="font-weight:600;">เวลาที่ร้านยืนยัน</label>
-      <select class="confirm-time-select" id="confirm-time-select">
-        ${PICKUP_TIME_SLOTS.map((t) => `<option value="${t}" ${t === job.requested_pickup_time_slot ? "selected" : ""}>${t} น.</option>`).join("")}
-      </select>
-      <button class="btn btn-primary btn-big-step" id="btn-confirm-appointment" style="margin-top:10px;">✅ ยืนยันรับงาน</button>
-    `;
-    function setDepositByPercent(percent) {
-      const estEl = document.getElementById("price-estimate-input");
-      const depositEl = document.getElementById("deposit-amount-input");
-      const estimate = Number(estEl.value);
-      if (!estEl.value || Number.isNaN(estimate) || estimate <= 0) {
-        showToast("กรุณากรอกราคาประเมินก่อน", "error");
-        return;
-      }
-      depositEl.value = Math.round(estimate * percent);
-    }
-    document.getElementById("btn-deposit-25").addEventListener("click", () => setDepositByPercent(0.25));
-    document.getElementById("btn-deposit-50").addEventListener("click", () => setDepositByPercent(0.5));
-    document.getElementById("btn-confirm-appointment").addEventListener("click", preventDoubleSubmit(async () => {
-      const priceEstEl = document.getElementById("price-estimate-input");
-      const depositEl = document.getElementById("deposit-amount-input");
-      const confirmedDate = document.getElementById("confirm-date-input").value;
-      const confirmedTime = document.getElementById("confirm-time-select").value;
-      if (!confirmedDate || !confirmedTime) {
-        showToast("กรุณาเลือกวันและเวลาให้ครบถ้วน", "error");
-        return;
-      }
-      const priceEstimate = priceEstEl.value === "" ? null : Number(priceEstEl.value);
-      const depositAmount = depositEl.value === "" ? 0 : Number(depositEl.value);
-      if (
-        (priceEstimate !== null && (Number.isNaN(priceEstimate) || priceEstimate < 0)) ||
-        Number.isNaN(depositAmount) || depositAmount < 0
-      ) {
-        showToast("ราคาต้องเป็นตัวเลขที่ไม่ติดลบ", "error");
-        return;
-      }
-      try {
-        await setJobPricing({
-          accessToken: getAccessToken(),
-          jobId: job.id,
-          priceEstimate,
-          priceFinal: priceEstimate,
-          depositAmount,
-        });
-        await confirmAppointment({
-          accessToken: getAccessToken(),
-          jobId: job.id,
-          confirmedDate,
-          confirmedTime,
-          changeReason: null,
-        });
-        showToast("ยืนยันรับงานสำเร็จ", "success");
-        await refreshJobs();
-        closeJobModal();
-      } catch (err) {
-        showToast(err.message, "error");
-      }
-    }));
-    return;
-  }
+
+  const timeOptions = [...PICKUP_TIME_SLOTS];
+  if (currentTime && !timeOptions.includes(currentTime)) timeOptions.push(currentTime);
+  timeOptions.sort();
+
   section.innerHTML = `
-    <h3>💰 ราคาและวันนัด</h3>
-    <label style="font-weight:600;">ราคาประเมิน (บาท)</label>
-    <input type="number" min="0" step="0.01" class="price-input" id="price-estimate-input" value="${job.price_estimate ?? ""}" placeholder="ยังไม่ระบุ" />
-    <label style="font-weight:600;">วันที่ร้านยืนยัน</label>
-    <input type="date" class="confirm-date-input" id="confirm-date-input" value="${job.confirmed_pickup_date ?? job.requested_pickup_date}" />
-    <label style="font-weight:600;">เวลาที่ร้านยืนยัน</label>
-    <select class="confirm-time-select" id="confirm-time-select">
-      ${PICKUP_TIME_SLOTS.map((t) => `<option value="${t}" ${t === job.confirmed_pickup_time ? "selected" : ""}>${t} น.</option>`).join("")}
-    </select>
-    <label style="font-weight:600;">เหตุผล (กรอกเฉพาะถ้าเปลี่ยนวันนัด)</label>
-    <textarea class="note-input" id="reschedule-reason-input" placeholder="ระบุเหตุผล หากเปลี่ยนวันที่/เวลานัด..." style="min-height:50px;"></textarea>
-    <button class="btn btn-primary" id="btn-save-price-and-appointment" style="margin-top:10px;">💾 บันทึก</button>
+    <h3>📅 นัดรับและราคา</h3>
+    ${pickupNowHtml}
+    ${priceHtml}
+    <details id="edit-appointment-details" style="margin-top:8px;">
+      <summary style="font-weight:700;font-size:1.05rem;min-height:44px;display:flex;align-items:center;cursor:pointer;">✏️ แก้วันนัดหรือราคา</summary>
+      <label style="font-weight:600;" for="confirm-date-input">วันที่นัดรับ</label>
+      <input type="date" class="confirm-date-input" id="confirm-date-input" value="${escapeHtml(currentDate ?? "")}" />
+      <label style="font-weight:600;" for="confirm-time-select">เวลานัดรับ</label>
+      <select class="confirm-time-select" id="confirm-time-select">
+        ${timeOptions.map((t) => `<option value="${escapeHtml(t)}" ${t === currentTime ? "selected" : ""}>${escapeHtml(t)} น.</option>`).join("")}
+      </select>
+      <div id="reschedule-compare" class="hidden" aria-live="polite"
+           style="background:#fff8e1;border:2px solid #f9a825;border-radius:14px;padding:12px 14px;margin:10px 0;font-size:1.05rem;line-height:1.7;"></div>
+      <div id="reschedule-reason-wrap" class="hidden">
+        <label style="font-weight:600;" for="reschedule-reason-select">เหตุผล (ไม่บังคับ)</label>
+        <select class="confirm-time-select" id="reschedule-reason-select">
+          <option value="">— ไม่ระบุ —</option>
+          ${RESCHEDULE_REASON_OPTIONS.map((r) => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("")}
+        </select>
+      </div>
+      <label style="font-weight:600;" for="price-estimate-input">ราคา (บาท)</label>
+      <input type="number" min="0" step="0.01" inputmode="decimal" class="price-input" id="price-estimate-input" value="${escapeHtml(totalPrice ?? "")}" placeholder="ยังไม่ระบุ" />
+      <button class="btn btn-primary" id="btn-save-price-and-appointment" style="margin-top:10px;" disabled>💾 บันทึก</button>
+    </details>
   `;
-  document.getElementById("btn-save-price-and-appointment").addEventListener("click", preventDoubleSubmit(async () => {
-    const priceEstEl = document.getElementById("price-estimate-input");
-    const confirmedDate = document.getElementById("confirm-date-input").value;
-    const confirmedTime = document.getElementById("confirm-time-select").value;
-    const changeReason = document.getElementById("reschedule-reason-input").value.trim();
-    if (!confirmedDate || !confirmedTime) {
-      showToast("กรุณาเลือกวันและเวลาให้ครบถ้วน", "error");
-      return;
+
+  const dateEl = document.getElementById("confirm-date-input");
+  const timeEl = document.getElementById("confirm-time-select");
+  const priceEl = document.getElementById("price-estimate-input");
+  const compareEl = document.getElementById("reschedule-compare");
+  const reasonWrapEl = document.getElementById("reschedule-reason-wrap");
+  const reasonEl = document.getElementById("reschedule-reason-select");
+  const saveBtn = document.getElementById("btn-save-price-and-appointment");
+
+  function readPrice() {
+    return priceEl.value === "" ? null : Number(priceEl.value);
+  }
+  function getChangeState() {
+    const dateChanged = !!dateEl.value && (dateEl.value !== currentDate || timeEl.value !== currentTime);
+    const price = readPrice();
+    const priceChanged = price !== totalPrice && !(price === null && totalPrice === null);
+    return { dateChanged, priceChanged, price };
+  }
+  function refreshEditState() {
+    const { dateChanged, priceChanged } = getChangeState();
+    compareEl.classList.toggle("hidden", !dateChanged);
+    reasonWrapEl.classList.toggle("hidden", !dateChanged);
+    if (dateChanged) {
+      compareEl.innerHTML = `
+        <div>📅 วันเดิม: <b>${escapeHtml(formatThaiDate(currentDate))} ${escapeHtml(currentTime)} น.</b></div>
+        <div>🆕 วันใหม่: <b>${escapeHtml(formatThaiDate(dateEl.value))} ${escapeHtml(timeEl.value)} น.</b></div>
+        <div>📨 ระบบจะส่ง LINE แจ้งลูกค้าให้อัตโนมัติ</div>`;
     }
-    const priceEstimate = priceEstEl.value === "" ? null : Number(priceEstEl.value);
-    if (priceEstimate !== null && (Number.isNaN(priceEstimate) || priceEstimate < 0)) {
+    saveBtn.disabled = !(dateChanged || priceChanged);
+    saveBtn.textContent = dateChanged ? "💾 บันทึกวันนัดใหม่" : (priceChanged ? "💾 บันทึกราคา" : "💾 บันทึก");
+  }
+  [dateEl, timeEl, priceEl].forEach((el) => {
+    el.addEventListener("input", refreshEditState);
+    el.addEventListener("change", refreshEditState);
+  });
+  refreshEditState();
+
+  saveBtn.addEventListener("click", preventDoubleSubmit(async () => {
+    const { dateChanged, priceChanged, price } = getChangeState();
+    if (!dateChanged && !priceChanged) return;
+    if (priceChanged && price !== null && (Number.isNaN(price) || price < 0)) {
       showToast("ราคาต้องเป็นตัวเลขที่ไม่ติดลบ", "error");
       return;
     }
-    const dateOrTimeChanged = confirmedDate !== job.confirmed_pickup_date || confirmedTime !== job.confirmed_pickup_time;
-    if (dateOrTimeChanged && !changeReason) {
-      showToast("กรุณาระบุเหตุผลที่เปลี่ยนวันนัด", "error");
+    if (dateChanged && (!dateEl.value || !timeEl.value)) {
+      showToast("กรุณาเลือกวันและเวลาให้ครบถ้วน", "error");
       return;
     }
+    saveBtn.disabled = true;
+    let line = null;
+    let savedParts = [];
     try {
-      await setJobPricing({
-        accessToken: getAccessToken(),
-        jobId: job.id,
-        priceEstimate,
-        priceFinal: priceEstimate,
-        depositAmount: job.deposit_amount ?? 0,
-      });
-      if (dateOrTimeChanged) {
-        await confirmAppointment({
+      if (dateChanged) {
+        const res = await confirmAppointment({
           accessToken: getAccessToken(),
           jobId: job.id,
-          confirmedDate,
-          confirmedTime,
-          changeReason,
+          confirmedDate: dateEl.value,
+          confirmedTime: timeEl.value,
+          changeReason: reasonEl.value || null,
         });
+        line = res?.line ?? null;
+        savedParts.push("วันนัดใหม่");
       }
-      showToast("บันทึกสำเร็จ", "success");
+      if (priceChanged) {
+        await setJobPricing({
+          accessToken: getAccessToken(),
+          jobId: job.id,
+          priceEstimate: price,
+          priceFinal: price,
+          depositAmount: job.deposit_amount ?? 0,
+        });
+        savedParts.push("ราคา");
+      }
       await refreshJobs();
-      openJobModal(job.id);
+      openJobModal(job.id, buildActionResult(`✅ บันทึก${savedParts.join("และ")}แล้ว`, line));
     } catch (err) {
-      showToast(err.message, "error");
+      const prefix = savedParts.length > 0 ? `บันทึก${savedParts.join("และ")}แล้ว แต่ขั้นตอนถัดไปไม่สำเร็จ: ` : "ยังไม่ได้บันทึก: ";
+      showToast(prefix + toFriendlyErrorMessage(err), "error");
+      if (savedParts.length > 0) await refreshJobs();
+      saveBtn.disabled = false;
     }
   }));
 }
 
 // ============================================================================
-// Payment Section — 2 ปุ่มติ๊ก "ยังไม่ชำระ" / "ชำระแล้ว" (กดกลับได้ถ้าผิดพลาด)
+// Payment Section — สรุปยอด + ประวัติ (ยุบไว้) การรับเงินทำผ่านปุ่ม "💰 รับเงินและปิดงาน" ที่เดียว
 // ============================================================================
-function renderPaymentSection(job, transactions, totalPaid, balance, isFullyPaid, isOwnerOrAdmin, isPendingConfirmation) {
+function renderPaymentSection(job, transactions, totals, isOwnerOrAdmin) {
   const section = document.getElementById("payment-section");
-  if (isPendingConfirmation) {
-    section.innerHTML = "";
-    return;
-  }
-  const hasPriceSet = job.price_estimate != null;
-  const balanceHtml = hasPriceSet
-    ? (isFullyPaid
-        ? `<div class="balance-box"><div class="amount">0 บาท</div><div class="caption">ชำระครบแล้ว</div></div>`
-        : `<div class="balance-box">
-             <div class="amount">${balance.toLocaleString()} บาท</div>
-             <div class="caption">ยอดคงเหลือ (ชำระแล้ว ${totalPaid.toLocaleString()} จาก ${job.price_estimate.toLocaleString()} บาท)</div>
-           </div>`)
-    : `<div class="warning-box">⚠️ ยังไม่ได้ระบุราคาประเมิน จึงยังคำนวณยอดคงเหลือไม่ได้</div>`;
+  const { totalPaid, totalPrice, balance } = totals;
   const activeTransactions = transactions.filter((tx) => !tx.is_voided);
-  const transactionsHtml = transactions.length === 0
-    ? ""
-    : `<h3 style="font-size:0.95rem;margin-top:14px;">📜 ประวัติการชำระเงิน</h3>${transactions.map(renderPaymentTxCardHtml).join("")}`;
+  const balanceHtml = totalPrice == null
+    ? `<div class="warning-box">⚠️ ยังไม่ได้ระบุราคา จึงยังคำนวณยอดคงเหลือไม่ได้</div>`
+    : (balance <= 0
+        ? `<div class="balance-box"><div class="amount">0 บาท</div><div class="caption">✅ ชำระครบแล้ว</div></div>`
+        : `<div class="balance-box">
+             <div class="amount">${escapeHtml(balance.toLocaleString())} บาท</div>
+             <div class="caption">ยอดคงเหลือ (ชำระแล้ว ${escapeHtml(totalPaid.toLocaleString())} จาก ${escapeHtml(totalPrice.toLocaleString())} บาท)</div>
+           </div>`);
+  const canVoid = isOwnerOrAdmin && activeTransactions.length > 0;
   section.innerHTML = `
     <h3>💳 การชำระเงิน</h3>
-    <div class="payment-toggle-row">
-      <button type="button" class="payment-toggle-btn ${!isFullyPaid ? "active-unpaid" : ""}" id="btn-mark-unpaid" ${(!isFullyPaid || !isOwnerOrAdmin) ? "disabled" : ""}>⭕ ยังไม่ชำระ</button>
-      <button type="button" class="payment-toggle-btn ${isFullyPaid ? "active-paid" : ""}" id="btn-mark-paid" ${(!hasPriceSet || isFullyPaid) ? "disabled" : ""}>✅ ชำระแล้ว</button>
-    </div>
     ${balanceHtml}
-    ${transactionsHtml}
+    ${transactions.length > 0 ? `
+    <details>
+      <summary style="font-weight:700;font-size:1.05rem;min-height:44px;display:flex;align-items:center;cursor:pointer;">📜 ประวัติการชำระเงิน (${transactions.length})</summary>
+      ${transactions.map(renderPaymentTxCardHtml).join("")}
+      ${canVoid ? `<button type="button" class="btn btn-secondary btn-sm" id="btn-void-payments" style="margin-top:8px;color:var(--danger);border-color:var(--danger);">↩️ ยกเลิกรายการรับเงิน (ต้องระบุเหตุผล)</button>` : ""}
+    </details>` : ""}
   `;
-  if (hasPriceSet && !isFullyPaid) {
-    document.getElementById("btn-mark-paid").addEventListener("click", preventDoubleSubmit(async () => {
-      try {
-        await recordPayment({
-          accessToken: getAccessToken(),
-          jobId: job.id,
-          transactionType: "payment",
-          amount: balance,
-          paymentMethod: "cash",
-          note: null,
-          idempotencyKey: generateIdempotencyKey("pay"),
-        });
-        showToast("บันทึกชำระเงินสำเร็จ", "success");
-        await refreshJobs();
-        openJobModal(job.id);
-      } catch (err) {
-        showToast(err.message, "error");
-      }
-    }));
-  }
-  if (isFullyPaid && isOwnerOrAdmin) {
-    document.getElementById("btn-mark-unpaid").addEventListener("click", preventDoubleSubmit(async () => {
+  if (canVoid) {
+    document.getElementById("btn-void-payments").addEventListener("click", preventDoubleSubmit(async () => {
       const result = await showConfirmDialog({
-        text: "กดผิดใช่หรือไม่? ต้องการย้อนกลับเป็น \"ยังไม่ชำระ\" ใช่หรือไม่? (ระบบจะยกเลิกประวัติการรับเงินที่ยังไม่ถูกยกเลิกทั้งหมด)",
+        text: "ต้องการยกเลิกรายการรับเงินของงานนี้ใช่หรือไม่?\n(ระบบจะยกเลิกรายการรับเงินที่ยังไม่ถูกยกเลิกทั้งหมด และเก็บประวัติไว้)",
         requireReason: true,
-        confirmLabel: "ยืนยันย้อนกลับ",
+        confirmLabel: "↩️ ยืนยันยกเลิกรายการรับเงิน",
       });
       if (!result.confirmed) return;
       try {
         for (const tx of activeTransactions) {
           await voidPayment({ accessToken: getAccessToken(), transactionId: tx.id, voidReason: result.reason });
         }
-        showToast("ย้อนกลับสำเร็จ", "success");
         await refreshJobs();
-        openJobModal(job.id);
+        openJobModal(job.id, buildActionResult("✅ ยกเลิกรายการรับเงินแล้ว", null));
       } catch (err) {
-        showToast(err.message, "error");
+        showToast(toFriendlyErrorMessage(err), "error");
+        await refreshJobs();
       }
     }));
   }
@@ -1040,111 +1071,174 @@ function renderPaymentTxCardHtml(tx) {
         ${tx.is_voided ? '<span class="voided-tag">ยกเลิกแล้ว</span>' : ""}
       </div>
       <div class="payment-tx-meta">
-        ${PAYMENT_METHOD_LABELS[tx.payment_method] ?? tx.payment_method} • ${formatThaiDateTime(tx.received_at)} • โดย ${tx.shop_users?.full_name ?? "-"}
-        ${tx.is_voided ? `<br/>เหตุผลยกเลิก: ${tx.void_reason ?? "-"} (โดย ${tx.voider?.full_name ?? "-"})` : ""}
+        ${escapeHtml(PAYMENT_METHOD_LABELS[tx.payment_method] ?? tx.payment_method)} • ${formatThaiDateTime(tx.received_at)} • โดย ${escapeHtml(tx.shop_users?.full_name ?? "-")}
+        ${tx.is_voided ? `<br/>เหตุผลยกเลิก: ${escapeHtml(tx.void_reason ?? "-")} (โดย ${escapeHtml(tx.voider?.full_name ?? "-")})` : ""}
       </div>
       ${tx.payment_evidence.length > 0 ? `
       <div class="payment-tx-evidence">
-        ${tx.payment_evidence.map((ev) => `<img src="${ev.signedUrl ?? ""}" alt="หลักฐาน" />`).join("")}
+        ${tx.payment_evidence.map((ev) => `<img src="${escapeHtml(ev.signedUrl ?? "")}" alt="หลักฐาน" />`).join("")}
       </div>` : ""}
     </div>
   `;
 }
 
 // ============================================================================
-// Status Buttons
+// Status Buttons — ขั้นตอนปกติ: รับเข้าระบบ → [✅ งานเสร็จแล้ว] → [💰 รับเงินและปิดงาน]
 // ============================================================================
-function renderStatusButtons(job, balance) {
+function renderStatusButtons(job, money) {
   const container = document.getElementById("status-buttons");
   const simplified = getSimplifiedStatusKey(job.status);
-  if (simplified === "cancelled" || simplified === "picked_up") {
-    container.innerHTML = `<div class="readonly-note">ไม่มีการเปลี่ยนสถานะที่ทำได้ในขั้นตอนนี้</div>`;
+  const { balance, totalPrice, totalPaid } = money;
+  const customerName = job.customers?.full_name ?? "-";
+  const pickupText = getEffectivePickupDate(job)
+    ? `${formatThaiDate(getEffectivePickupDate(job))} เวลา ${getEffectivePickupTime(job).slice(0, 5)} น.`
+    : "-";
+
+  if (simplified === "cancelled") {
+    container.innerHTML = `<div class="readonly-note">🚫 งานนี้ถูกยกเลิกแล้ว</div>`;
     return;
   }
+  if (simplified === "picked_up") {
+    container.innerHTML = `<div class="readonly-note">📦 ลูกค้ารับงานแล้ว ปิดงานเรียบร้อย</div>`;
+    return;
+  }
+
+  // ---------------- เสร็จแล้ว: รอลูกค้ามารับ ----------------
   if (simplified === "completed") {
-    const hasBalance = job.price_estimate != null && balance != null && balance > 0;
-    container.innerHTML = hasBalance
-      ? `<button class="btn btn-success btn-big-step" id="btn-next-step">💰 จ่ายครบแล้ว + ลูกค้ารับแล้ว</button>
-         <button class="btn btn-secondary btn-sm" id="btn-revert-step" style="margin-top:6px;">↩️ ย้อนกลับไปกำลังทำ</button>`
-      : `<button class="btn btn-success btn-big-step" id="btn-next-step">📦 ลูกค้ารับแล้ว</button>
-         <button class="btn btn-secondary btn-sm" id="btn-revert-step" style="margin-top:6px;">↩️ ย้อนกลับไปกำลังทำ</button>`;
-    document.getElementById("btn-next-step").addEventListener("click", preventDoubleSubmit(async () => {
+    const hasBalance = totalPrice != null && balance != null && balance > 0;
+    container.innerHTML = `
+      <button class="btn btn-success btn-big-step" id="btn-next-step">${hasBalance ? "💰 รับเงินและปิดงาน" : "📦 ลูกค้ารับแล้ว"}</button>
+      <button class="btn btn-secondary btn-sm" id="btn-revert-step" style="margin-top:10px;">↩️ กดผิด ย้อนกลับ</button>
+    `;
+    document.getElementById("btn-revert-step").addEventListener("click", preventDoubleSubmit(async () => {
+      const result = await showConfirmDialog({
+        text: `↩️ กดผิด ย้อนกลับ?\n\nเลขงาน: ${job.job_number}\nลูกค้า: ${customerName}\n\nงานจะกลับเป็น "📋 รับเข้าระบบ"\nถ้าเคยแจ้งลูกค้าว่างานเสร็จแล้ว ระบบจะส่ง LINE ขออภัยให้อัตโนมัติ`,
+        requireReason: false,
+        confirmLabel: "↩️ ยืนยันย้อนกลับ",
+      });
+      if (!result.confirmed) return;
       try {
-        if (hasBalance) {
+        const res = await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "waiting", reason: "กดงานเสร็จผิด ย้อนกลับ" });
+        await refreshJobs();
+        openJobModal(job.id, buildActionResult("✅ ย้อนกลับเป็น \"รับเข้าระบบ\" แล้ว", res?.line ?? null));
+      } catch (err) {
+        showToast(toFriendlyErrorMessage(err), "error");
+      }
+    }));
+
+    document.getElementById("btn-next-step").addEventListener("click", preventDoubleSubmit(async () => {
+      // ไม่มียอดค้าง (หรือยังไม่ระบุราคา): ยืนยันครั้งเดียวแล้วปิดงาน
+      if (!hasBalance) {
+        const result = await showConfirmDialog({
+          text: `📦 ยืนยันว่าลูกค้ารับงานแล้ว?\n\nเลขงาน: ${job.job_number}\nลูกค้า: ${customerName}${totalPrice == null ? "\n\n⚠️ ยังไม่ได้ระบุราคา (จะปิดงานโดยไม่บันทึกรับเงิน)" : ""}`,
+          requireReason: false,
+          confirmLabel: "📦 ยืนยันลูกค้ารับแล้ว",
+        });
+        if (!result.confirmed) return;
+        try {
+          await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "picked_up", reason: null });
+          showToast("✅ ปิดงานเรียบร้อย", "success");
+          await refreshJobs();
+          closeJobModal();
+        } catch (err) {
+          showToast(toFriendlyErrorMessage(err), "error");
+        }
+        return;
+      }
+      // มียอดค้าง: เปิดขั้นตอนสั้นในหน้าจอเดียว (ยอดรวม/ชำระแล้ว/คงเหลือ + วิธีชำระ + ปุ่มยืนยันปุ่มเดียว)
+      container.innerHTML = `
+        <div class="info-row"><span class="label">ยอดรวม</span><span class="value">${escapeHtml(totalPrice.toLocaleString())} บาท</span></div>
+        <div class="info-row"><span class="label">ชำระแล้ว</span><span class="value">${escapeHtml(totalPaid.toLocaleString())} บาท</span></div>
+        <div class="balance-box"><div class="amount">${escapeHtml(balance.toLocaleString())} บาท</div><div class="caption">ยอดคงเหลือที่ต้องรับ</div></div>
+        <fieldset style="border:none;padding:0;margin:12px 0;">
+          <legend style="font-weight:700;margin-bottom:6px;">วิธีชำระเงิน</legend>
+          <label style="display:flex;align-items:center;gap:10px;min-height:52px;font-size:1.1rem;cursor:pointer;">
+            <input type="radio" name="pay-method" value="cash" checked style="width:26px;height:26px;" /> 💵 เงินสด
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;min-height:52px;font-size:1.1rem;cursor:pointer;">
+            <input type="radio" name="pay-method" value="transfer" style="width:26px;height:26px;" /> 📲 โอนเงิน
+          </label>
+        </fieldset>
+        <button class="btn btn-success btn-big-step" id="btn-confirm-close">✅ ยืนยันรับเงินและปิดงาน</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-pay-back" style="margin-top:10px;">← กลับ</button>
+      `;
+      document.getElementById("btn-pay-back").addEventListener("click", () => renderStatusButtons(job, money));
+      const confirmBtn = document.getElementById("btn-confirm-close");
+      confirmBtn.addEventListener("click", preventDoubleSubmit(async () => {
+        const method = container.querySelector('input[name="pay-method"]:checked')?.value ?? "cash";
+        confirmBtn.disabled = true;
+        let paymentSaved = false;
+        try {
+          // Key คงที่ต่อ (งาน+ยอด): กดซ้ำ/Retry จะไม่สร้างรายการเงินซ้ำ (record-payment คืนรายการเดิม)
           await recordPayment({
             accessToken: getAccessToken(),
             jobId: job.id,
             transactionType: "payment",
             amount: balance,
-            paymentMethod: "cash",
+            paymentMethod: method,
             note: null,
-            idempotencyKey: generateIdempotencyKey("pay"),
+            idempotencyKey: getStablePaymentKey(job.id, balance),
           });
+          paymentSaved = true;
+          await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "picked_up", reason: null });
+          clearStablePaymentKey(job.id, balance);
+          showToast("✅ รับเงินและปิดงานเรียบร้อย", "success");
+          await refreshJobs();
+          closeJobModal();
+        } catch (err) {
+          if (paymentSaved) {
+            showToast("บันทึกรับเงินแล้ว แต่ปิดงานไม่สำเร็จ กรุณากด \"✅ ยืนยันรับเงินและปิดงาน\" อีกครั้ง (ระบบจะไม่รับเงินซ้ำ)", "error");
+          } else {
+            showToast("ยังไม่ได้บันทึกรับเงิน: " + toFriendlyErrorMessage(err), "error");
+          }
+          confirmBtn.disabled = false;
         }
-        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "picked_up", reason: null });
-        showToast("บันทึกสำเร็จ", "success");
-        await refreshJobs();
-        closeJobModal();
-      } catch (err) {
-        showToast(err.message, "error");
-      }
-    }));
-    document.getElementById("btn-revert-step").addEventListener("click", preventDoubleSubmit(async () => {
-      const result = await showConfirmDialog({
-        text: "ต้องการย้อนกลับไปสถานะ \"รับเข้าระบบ (กำลังทำ)\" ใช่หรือไม่?",
-        requireReason: false,
-        confirmLabel: "ยืนยัน",
-      });
-      if (!result.confirmed) return;
-      try {
-        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "in_progress", reason: null });
-        showToast("เปลี่ยนสถานะสำเร็จ", "success");
-        await refreshJobs();
-        closeJobModal();
-      } catch (err) {
-        showToast(err.message, "error");
-      }
+      }));
     }));
     return;
   }
-  if (job.status === "pending_confirmation") {
-    container.innerHTML = `<div class="readonly-note">กรุณายืนยันรับงานในส่วนด้านบนก่อน จึงจะเปลี่ยนสถานะต่อได้</div>`;
-    return;
-  }
+
+  // ---------------- รับเข้าระบบ (รวมงานเก่าที่ยังเป็น pending_confirmation / waiting / in_progress) ----------------
   container.innerHTML = `
     <button class="btn btn-success btn-big-step" id="btn-next-step">✅ งานเสร็จแล้ว</button>
-    <button class="btn btn-secondary btn-sm" id="btn-cancel-step" style="margin-top:6px;color:var(--danger);border-color:var(--danger);">🚫 ยกเลิกงานนี้</button>
+    <details style="margin-top:10px;">
+      <summary style="min-height:44px;display:flex;align-items:center;cursor:pointer;">⚙️ ตัวเลือกพิเศษ</summary>
+      <button class="btn btn-secondary btn-sm" id="btn-cancel-step" style="margin-top:6px;color:var(--danger);border-color:var(--danger);">🚫 ยกเลิกงานนี้</button>
+    </details>
   `;
   document.getElementById("btn-next-step").addEventListener("click", preventDoubleSubmit(async () => {
+    const result = await showConfirmDialog({
+      text: `✅ ยืนยันว่างานเสร็จแล้ว?\n\nเลขงาน: ${job.job_number}\nลูกค้า: ${customerName}\nนัดรับ: ${pickupText}\n\nระบบจะส่ง LINE แจ้งลูกค้าอัตโนมัติ`,
+      requireReason: false,
+      confirmLabel: "✅ ยืนยันว่าเสร็จแล้ว",
+    });
+    if (!result.confirmed) return;
     try {
-      if (job.status === "waiting") {
-        await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "in_progress", reason: null });
-      }
-      await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "completed", reason: null });
-      showToast("เปลี่ยนสถานะสำเร็จ", "success");
+      const res = await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "completed", reason: null });
       await refreshJobs();
-      closeJobModal();
+      openJobModal(job.id, buildActionResult("✅ บันทึกว่างานเสร็จแล้ว", res?.line ?? null));
     } catch (err) {
-      showToast(err.message, "error");
+      showToast("ยังไม่ได้บันทึก: " + toFriendlyErrorMessage(err), "error");
     }
   }));
   document.getElementById("btn-cancel-step").addEventListener("click", preventDoubleSubmit(async () => {
     const result = await showConfirmDialog({
       text: `ต้องการยกเลิกงาน ${job.job_number} ใช่หรือไม่?`,
       requireReason: true,
-      confirmLabel: "ยกเลิกงาน",
+      confirmLabel: "🚫 ยกเลิกงาน",
     });
     if (!result.confirmed) return;
     try {
       await changeJobStatus({ accessToken: getAccessToken(), jobId: job.id, newStatus: "cancelled", reason: result.reason });
-      showToast("เปลี่ยนสถานะสำเร็จ", "success");
+      showToast("ยกเลิกงานแล้ว", "success");
       await refreshJobs();
       closeJobModal();
     } catch (err) {
-      showToast(err.message, "error");
+      showToast(toFriendlyErrorMessage(err), "error");
     }
   }));
 }
+
 function closeJobModal() {
   document.getElementById("job-modal-backdrop").classList.add("hidden");
   state.currentJobId = null;
