@@ -4,7 +4,7 @@
 // รอบนี้เพิ่ม/แก้:
 // 1) การ์ดสรุปหน้าหลักใช้ "ชื่อและสี" เดียวกับป้ายสถานะในรายการงาน:
 //    📋 รับเข้าระบบ  และ  ✅ เสร็จแล้ว  (ตัวเลขบนการ์ด = จำนวนงานในรายการเมื่อกดการ์ดนั้น)
-// 2) ปรับหน้าตา (โทนกรมท่า/พื้นครีม/ปุ่มและตัวอักษรใหญ่) ด้วย applyOwnerTheme() — ไม่ต้องแก้ index.html
+// 2) ธีมกรมท่า/พื้นครีม/ปุ่มใหญ่: ฝังใน index.html แล้ว และ applyOwnerTheme() เป็นตัวสำรองให้ index.html เวอร์ชันเก่าก็สีตรงกัน
 // (คงการทำงานเดิมของรอบก่อนทั้งหมด: แป้นกด PIN, เปิดงานกลับ, LINE, รับเงิน ฯลฯ)
 import { listLoginIdentities } from "../shared/auth-client.js";
 import {
@@ -33,7 +33,7 @@ import { getSupabaseClient } from "../shared/supabase-client.js";
 import { mountPinPad } from "../shared/pin-pad.js";
 
 // ============================================================================
-// Owner Theme — โทนกรมท่า / พื้นครีม / ปุ่มใหญ่ (ปรับผ่านตัวแปรสีของหน้า + กฎเสริมที่ปลอดภัย)
+// Owner Theme (สำรอง) — เปลี่ยนตัวแปรสีของหน้า (:root) ทำให้ส่วนที่ใช้ var(--primary) เป็นกรมท่าทั้งหมด
 // ============================================================================
 function applyOwnerTheme() {
   try {
@@ -42,7 +42,7 @@ function applyOwnerTheme() {
     style.id = "qe-owner-theme";
     style.textContent = `
       :root {
-        --primary: #1b2a49; --primary-dark: #1b2a49; --primary-soft: #e3e9f5;
+        --primary: #1b2a49; --primary-dark: #1b2a49; --primary-soft: #e3e9f5; --urgent-blue-bg: #e3e9f5;
         --bg: #faf6ee; --border: #c9d1e0; --success: #1e8e3e; --danger: #c5221f;
         font-size: 18px;
       }
@@ -77,17 +77,6 @@ function applyOwnerTheme() {
     `;
     document.head.appendChild(style);
 
-    // แถบหัวหน้าจอ: หา Element ที่มีสีพื้นหลังจริงรอบ ๆ ชื่อผู้ใช้ แล้วเปลี่ยนเป็นกรมท่า (ไม่ต้องรู้ชื่อ Class)
-    let el = document.getElementById("header-user-name");
-    while (el && el !== document.body) {
-      const bg = getComputedStyle(el).backgroundColor;
-      const isTransparent = !bg || bg === "transparent" || /rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(bg);
-      if (!isTransparent) {
-        el.style.setProperty("background-color", "#1b2a49", "important");
-        break;
-      }
-      el = el.parentElement;
-    }
   } catch {
     // ปรับหน้าตาไม่สำเร็จไม่ควรทำให้ระบบใช้งานไม่ได้
   }
@@ -177,8 +166,8 @@ const screens = {
 function showScreen(name) {
   Object.values(screens).forEach((el) => el.classList.add("hidden"));
   screens[name].classList.remove("hidden");
-  if (name === "dashboard") applyOwnerTheme(); // ต้องรอให้หน้าหลักแสดงก่อน จึงจะหาสีของแถบหัวได้
 }
+applyOwnerTheme(); // ใช้กับทุกหน้าจอ (รวมหน้า Login) ตั้งแต่เริ่มโหลด
 
 // ============================================================================
 // Offline Handling
@@ -718,6 +707,9 @@ function renderJobList() {
     const urgency = getUrgencyTag(job);
     const card = document.createElement("div");
     card.className = "job-card";
+    card.style.borderLeftColor = statusInfo.color; // เส้นสีข้างการ์ด = สีเดียวกับป้ายสถานะ (ยังมีไอคอน+ข้อความกำกับเสมอ)
+    card.setAttribute("role", "button");
+    card.tabIndex = 0;
     card.innerHTML = `
       ${job.customers?.phone ? `<a href="tel:${escapeHtml(job.customers.phone)}" class="quick-call-btn" title="โทรหาลูกค้า" onclick="event.stopPropagation()">📞</a>` : ""}
       <div class="job-card-top">
@@ -736,6 +728,12 @@ function renderJobList() {
       </div>
     `;
     card.addEventListener("click", () => openJobModal(job.id));
+    card.addEventListener("keydown", (e) => {
+      if (e.target === card && (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        openJobModal(job.id);
+      }
+    });
     listEl.appendChild(card);
   });
 }

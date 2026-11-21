@@ -2,27 +2,31 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#1b2a49" />
 <title>ระบบติดตามงาน ร้านเย็บผ้าณัฏฐา</title>
 <style>
+  /* ธีม: กรมท่า + พื้นครีม (อบอุ่น เหมาะกับร้านตัดเย็บ) / สีเขียว = งานเสร็จ / สีแดง = ยกเลิกและข้อผิดพลาดเท่านั้น */
   :root {
-    --primary: #1a73e8;
-    --primary-dark: #0d47a1;
+    --primary: #1b2a49;
+    --primary-dark: #1b2a49;
+    --primary-soft: #e3e9f5;
     --success: #1e8e3e;
-    --danger: #d93025;
+    --danger: #c5221f;
     --warning: #f9a825;
-    --purple: #8e24aa;
+    --purple: #1b2a49;
     --grey: #5f6368;
     --text: #202124;
     --text-muted: #5f6368;
-    --border: #dadce0;
-    --bg: #f4f6f8;
+    --border: #c9d1e0;
+    --bg: #faf6ee;
     --urgent-red-bg: #fdeaea;
-    --urgent-blue-bg: #e8f0fe;
+    --urgent-blue-bg: #e3e9f5;
     --urgent-orange-bg: #fff3e0;
     --neutral-bg: #ffffff;
     --ready-green-bg: #e6f4ea;
-    font-size: 18px; /* ขยายขนาดตัวอักษรพื้นฐานทั้งระบบเพื่อให้อ่านง่ายขึ้นสำหรับผู้สูงอายุ */
+    --shadow: 0 2px 8px rgba(27, 42, 73, 0.10);
+    font-size: 18px; /* ตัวอักษรพื้นฐานใหญ่ เพื่อให้อ่านง่ายสำหรับผู้สูงอายุ */
   }
   * { box-sizing: border-box; }
   body {
@@ -30,11 +34,17 @@
     font-family: "Noto Sans Thai", -apple-system, "Segoe UI", sans-serif;
     background: var(--bg);
     color: var(--text);
-    padding-bottom: calc(40px + env(safe-area-inset-bottom));
-    overflow-x: hidden;
+    padding-bottom: 40px;
   }
   .hidden { display: none !important; }
   .container { max-width: 720px; margin: 0 auto; padding: 12px; }
+  /* กรอบสีเหลืองเมื่อใช้คีย์บอร์ด (Accessibility) */
+  button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible,
+  select:focus-visible, textarea:focus-visible, .job-card:focus-visible, .summary-card:focus-visible,
+  .calendar-cell:focus-visible {
+    outline: 4px solid #f4b400;
+    outline-offset: 2px;
+  }
   /* ---------------- Header ---------------- */
   .app-header {
     background: var(--primary);
@@ -48,15 +58,16 @@
     z-index: 50;
   }
   .app-header .title { font-size: 1.15rem; font-weight: 700; }
-  .app-header .user-info { font-size: 0.85rem; text-align: right; display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+  .app-header .user-info { font-size: 0.9rem; text-align: right; display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
   .app-header .user-info-text { text-align: right; }
   .app-header button.icon-btn {
-    background: rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.18);
     border: none;
     color: #fff;
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 10px 14px;
     min-height: 48px;
+    min-width: 48px;
     font-size: 1rem;
     font-weight: 700;
     cursor: pointer;
@@ -69,9 +80,9 @@
     border: none;
     color: #fff;
     border-radius: 50%;
-    width: 30px;
-    height: 30px;
-    font-size: 0.95rem;
+    width: 44px;
+    height: 44px;
+    font-size: 1.1rem;
     cursor: pointer;
     flex-shrink: 0;
     display: flex;
@@ -84,26 +95,26 @@
     right: -4px;
     background: var(--danger);
     color: #fff;
-    font-size: 0.6rem;
+    font-size: 0.7rem;
     font-weight: 800;
     border-radius: 999px;
-    min-width: 15px;
-    height: 15px;
+    min-width: 18px;
+    height: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 3px;
+    padding: 0 4px;
   }
   .offline-banner {
     background: #fff3e0;
-    color: #e65100;
+    color: #b34700;
     text-align: center;
-    padding: 8px;
-    font-size: 0.9rem;
+    padding: 10px;
+    font-size: 1rem;
+    font-weight: 600;
   }
   /* ---------------- Cards (Summary) ---------------- */
-  /* จัดกลุ่มการ์ดสรุปเป็น 2 ชุด: "ต้องดูวันนี้" (ใหญ่ เด่น) และ "กำลังจะถึง" (เล็กกว่า)
-     เพื่อให้ผู้สูงอายุเห็นสิ่งที่ต้องรีบทำก่อน โดยไม่ต้องอ่านครบทั้ง 6 การ์ดเท่ากัน */
+  /* หน้าหลักมีการ์ดสรุปแค่ 2 ใบ (ชื่อ/ไอคอน/สีเดียวกับป้ายสถานะ) + "ดูเพิ่มเติม" แบบพับเก็บ */
   .summary-group-title {
     font-size: 1.05rem;
     font-weight: 800;
@@ -118,17 +129,17 @@
     margin: 0 0 14px;
   }
   .summary-grid.summary-grid-sub {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 10px;
   }
   .summary-card {
     background: #fff;
-    border-radius: 16px;
+    border-radius: 20px;
     padding: 16px;
     text-align: center;
     cursor: pointer;
     border: 3px solid transparent;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    box-shadow: var(--shadow);
     min-height: 88px;
     display: flex;
     flex-direction: column;
@@ -138,51 +149,58 @@
   }
   .summary-card:active { transform: scale(0.97); }
   .summary-card.active { border-color: var(--primary); }
-  .summary-grid-main > .summary-card {
+  .summary-grid:not(.summary-grid-sub) .summary-card {
     flex-direction: row;
     justify-content: flex-start;
     text-align: left;
-    gap: 14px;
-    padding: 18px 20px;
+    gap: 12px;
+    padding: 18px 16px;
   }
   .summary-card .count { font-size: 2rem; font-weight: 800; line-height: 1; }
-  .summary-grid-main .summary-card .count { font-size: 2.4rem; }
-  .summary-card .label { font-size: 0.95rem; color: var(--text-muted); margin-top: 2px; font-weight: 600; }
-  .summary-grid-main .summary-card .label { font-size: 1.15rem; margin-top: 0; }
+  .summary-grid:not(.summary-grid-sub) .summary-card .count { font-size: 2.4rem; }
+  .summary-card .label { font-size: 1rem; color: var(--text-muted); margin-top: 2px; font-weight: 700; }
+  .summary-grid:not(.summary-grid-sub) .summary-card .label { font-size: 1.1rem; margin-top: 0; }
   .summary-card .icon { font-size: 1.6rem; }
-  .summary-grid-main .summary-card .icon { font-size: 2.2rem; }
-  /* สีพื้นหลังตามความเร่งด่วน เพื่อให้เห็นชัดตั้งแต่แรกว่าเรื่องไหนด่วนกว่ากัน */
+  .summary-grid:not(.summary-grid-sub) .summary-card .icon { font-size: 2rem; }
+  .summary-card .note { font-size: 0.9rem; font-weight: 700; color: var(--danger); margin-top: 4px; line-height: 1.3; }
+  /* สีพื้นหลังการ์ด: กรมท่า = รับเข้าระบบ / เขียว = เสร็จแล้ว */
   .summary-card.tone-red { background: var(--urgent-red-bg); }
   .summary-card.tone-red .count,
   .summary-card.tone-red .label { color: var(--danger); }
-  .summary-card.tone-blue { background: var(--urgent-blue-bg); }
-  .summary-card.tone-blue .count,
-  .summary-card.tone-blue .label { color: var(--primary-dark); }
+  .summary-card.tone-navy, .summary-card.tone-blue { background: var(--urgent-blue-bg); }
+  .summary-card.tone-navy .count, .summary-card.tone-navy .label,
+  .summary-card.tone-blue .count, .summary-card.tone-blue .label { color: var(--primary-dark); }
   .summary-card.tone-orange { background: var(--urgent-orange-bg); }
   .summary-card.tone-orange .count,
-  .summary-card.tone-orange .label { color: #c25e00; }
+  .summary-card.tone-orange .label { color: #b34700; }
   .summary-card.tone-green { background: var(--ready-green-bg); }
   .summary-card.tone-green .count,
   .summary-card.tone-green .label { color: var(--success); }
   .summary-card.tone-neutral { background: #fff; }
+  details.summary-more > summary { color: var(--primary); font-size: 1.05rem; }
   /* ---------------- Search / Filters ---------------- */
   .toolbar {
     background: #fff;
-    border-radius: 16px;
+    border-radius: 20px;
     padding: 14px;
     margin-bottom: 14px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    box-shadow: var(--shadow);
   }
   .toolbar input[type="text"], .toolbar select, .toolbar input[type="date"] {
     width: 100%;
     font-size: 1.1rem;
     padding: 14px;
     min-height: 54px;
-    border-radius: 12px;
+    border-radius: 14px;
     border: 2px solid var(--border);
     margin-bottom: 10px;
+    background: #fff;
+    color: var(--text);
   }
-  .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .filter-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .toolbar select, .toolbar input[type="date"] { min-width: 0; }
+  /* จอแคบ: ช่องกรองเรียงลงทีละช่อง (ช่องวันที่ของมือถือกว้างเกินครึ่งจอ) */
+  @media (max-width: 520px) { .filter-row { grid-template-columns: minmax(0, 1fr); gap: 0; } }
   .toolbar-toggle {
     background: none;
     border: none;
@@ -191,7 +209,7 @@
     font-size: 1.05rem;
     cursor: pointer;
     padding: 10px 0;
-    min-height: 44px;
+    min-height: 48px;
   }
   .show-picked-up-row {
     display: flex;
@@ -205,37 +223,38 @@
   .switch {
     position: relative;
     display: inline-block;
-    width: 56px;
-    height: 32px;
+    width: 60px;
+    height: 34px;
     flex-shrink: 0;
   }
-  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch input { opacity: 0; width: 100%; height: 100%; position: absolute; inset: 0; margin: 0; cursor: pointer; z-index: 1; }
   .switch-slider {
     position: absolute;
     cursor: pointer;
     inset: 0;
-    background-color: #ccc;
+    background-color: #9aa0a6;
     border-radius: 999px;
     transition: 0.2s;
   }
   .switch-slider::before {
     position: absolute;
     content: "";
-    height: 26px; width: 26px;
+    height: 28px; width: 28px;
     left: 3px; bottom: 3px;
     background-color: #fff;
     border-radius: 50%;
     transition: 0.2s;
   }
   .switch input:checked + .switch-slider { background-color: var(--primary); }
-  .switch input:checked + .switch-slider::before { transform: translateX(24px); }
+  .switch input:checked + .switch-slider::before { transform: translateX(26px); }
+  .switch input:focus-visible + .switch-slider { outline: 4px solid #f4b400; outline-offset: 2px; }
   /* ---------------- Calendar ---------------- */
   .calendar-card {
     background: #fff;
-    border-radius: 16px;
+    border-radius: 20px;
     padding: 14px;
     margin-bottom: 14px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    box-shadow: var(--shadow);
   }
   .calendar-header {
     display: flex;
@@ -243,13 +262,16 @@
     justify-content: space-between;
     margin-bottom: 10px;
     font-weight: 700;
+    font-size: 1.1rem;
   }
   .calendar-header button {
-    background: #f1f3f4;
+    background: var(--primary-soft);
+    color: var(--primary);
     border: none;
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 12px 18px;
     min-height: 48px;
+    min-width: 56px;
     font-size: 1.05rem;
     font-weight: 700;
     cursor: pointer;
@@ -261,7 +283,7 @@
     gap: 5px;
     text-align: center;
   }
-  .calendar-weekday { font-size: 0.85rem; font-weight: 700; color: var(--text-muted); padding: 4px 0; }
+  .calendar-weekday { font-size: 0.9rem; font-weight: 700; color: var(--text-muted); padding: 4px 0; }
   .calendar-cell {
     aspect-ratio: 1;
     border-radius: 12px;
@@ -272,7 +294,7 @@
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    background: #f8f9fa;
+    background: #f6f3ec;
     position: relative;
     border: 2px solid transparent;
     min-height: 44px;
@@ -280,7 +302,7 @@
   .calendar-cell.empty { background: transparent; cursor: default; }
   .calendar-cell.today { border-color: var(--primary); font-weight: 800; }
   .calendar-cell.has-jobs { background: var(--urgent-blue-bg); }
-  /* วันที่มีงานเลยกำหนดอยู่ ให้เด่นเป็นสีแดงทันที มองเห็นง่ายกว่าปฏิทินเปล่า */
+  /* วันที่มีงานเลยกำหนดอยู่ ให้เด่นเป็นสีแดงทันที */
   .calendar-cell.has-jobs-late { background: var(--urgent-red-bg); }
   .calendar-cell.selected { background: var(--primary); color: #fff; }
   .calendar-cell .dot-count {
@@ -293,7 +315,7 @@
     border-radius: 999px;
     background: var(--primary-dark);
     color: #fff;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     font-weight: 800;
     padding: 0 4px;
   }
@@ -304,7 +326,7 @@
     flex-wrap: wrap;
     gap: 14px;
     margin-top: 12px;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     color: var(--text-muted);
   }
   .calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -316,17 +338,18 @@
     align-items: center;
     margin: 10px 2px;
     font-weight: 700;
+    font-size: 1.1rem;
     scroll-margin-top: 70px;
   }
   .job-card {
     background: #fff;
-    border-radius: 14px;
+    border-radius: 18px;
     padding: 16px;
     margin-bottom: 12px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    box-shadow: var(--shadow);
     cursor: pointer;
     position: relative;
-    border-left: 6px solid var(--border);
+    border-left: 8px solid var(--border);
   }
   .job-card:active { transform: scale(0.99); }
   .job-card-top {
@@ -334,17 +357,18 @@
     justify-content: space-between;
     align-items: flex-start;
     gap: 8px;
-    padding-right: 42px;
+    padding-right: 54px;
+    flex-wrap: wrap;
   }
-  .job-card .job-number { font-weight: 700; font-size: 1.15rem; }
-  .job-card .customer-name { color: var(--text-muted); font-size: 1.05rem; font-weight: 600; margin-top: 2px; }
+  .job-card .job-number { font-weight: 700; font-size: 1.2rem; }
+  .job-card .customer-name { color: var(--text-muted); font-size: 1.05rem; font-weight: 600; margin-top: 2px; word-break: break-word; }
   .status-badge {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 5px 12px;
+    padding: 6px 12px;
     border-radius: 999px;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: #fff;
     white-space: nowrap;
@@ -354,29 +378,29 @@
     flex-wrap: wrap;
     gap: 10px;
     margin-top: 8px;
-    font-size: 0.95rem;
+    font-size: 1rem;
     color: var(--text-muted);
   }
   .urgent-tag {
     background: #fdecea;
     color: var(--danger);
     border-radius: 8px;
-    padding: 2px 8px;
-    font-size: 0.78rem;
+    padding: 3px 10px;
+    font-size: 0.85rem;
     font-weight: 700;
   }
   .quick-call-btn {
     position: absolute;
-    top: 14px;
-    right: 14px;
-    width: 34px;
-    height: 34px;
+    top: 12px;
+    right: 12px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    background: #e8f5e9;
+    background: #e6f4ea;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.1rem;
+    font-size: 1.25rem;
     text-decoration: none;
   }
   /* ---------------- States ---------------- */
@@ -401,10 +425,11 @@
   /* ---------------- Login Screen ---------------- */
   .login-card {
     background: #fff;
-    border-radius: 16px;
+    border-radius: 20px;
     padding: 24px;
     max-width: 420px;
-    margin: 40px auto;
+    margin: 28px auto;
+    box-shadow: var(--shadow);
   }
   .login-title {
     text-align: center;
@@ -426,36 +451,43 @@
   .identity-btn {
     display: block;
     width: 100%;
+    min-height: 60px;
     padding: 16px;
     margin-bottom: 10px;
-    font-size: 1.1rem;
-    border-radius: 12px;
-    border: 2px solid #ddd;
-    background: #fafafa;
+    font-size: 1.15rem;
+    font-family: inherit;
+    border-radius: 16px;
+    border: 2px solid var(--border);
+    background: #fff;
+    color: var(--primary);
     cursor: pointer;
     text-align: left;
   }
-  .identity-btn.selected { border-color: var(--primary); background: #e8f0fe; }
+  .identity-btn:active { background: var(--primary-soft); }
+  .identity-btn.selected { border-color: var(--primary); background: var(--primary-soft); }
   input[type="password"] {
     width: 100%;
     font-size: 1.6rem;
     letter-spacing: 0.5rem;
     text-align: center;
     padding: 14px;
-    border-radius: 12px;
-    border: 2px solid #ddd;
+    border-radius: 14px;
+    border: 2px solid var(--border);
     box-sizing: border-box;
     margin: 16px 0;
   }
-  label.checkbox-row { display:flex; align-items:center; gap:8px; font-size:1rem; margin-bottom:16px; }
+  label.checkbox-row { display:flex; align-items:center; gap:10px; font-size:1.05rem; margin-bottom:8px; min-height: 48px; }
+  label.checkbox-row input[type="checkbox"] { width: 28px; height: 28px; flex: none; }
   /* ---------------- Buttons ---------------- */
   .btn {
     display: block;
     width: 100%;
+    min-height: 52px;
     padding: 16px;
-    font-size: 1.05rem;
+    font-size: 1.1rem;
     font-weight: 700;
-    border-radius: 14px;
+    font-family: inherit;
+    border-radius: 16px;
     border: none;
     cursor: pointer;
     text-align: center;
@@ -464,28 +496,23 @@
   .btn-primary { background: var(--primary); color: #fff; }
   .btn-success { background: var(--success); color: #fff; }
   .btn-danger { background: var(--danger); color: #fff; }
-  .btn-purple { background: var(--purple); color: #fff; }
+  .btn-purple { background: var(--primary); color: #fff; }
   .btn-secondary { background: #fff; color: var(--primary); border: 2px solid var(--primary); }
   .btn:disabled { background: #9aa0a6; color: #fff; cursor: not-allowed; }
   .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .btn-sm {
-    padding: 8px 14px;
-    font-size: 0.85rem;
+    padding: 10px 16px;
+    min-height: 48px;
+    font-size: 1rem;
     width: auto;
     display: inline-block;
     margin-bottom: 0;
   }
   .btn-big-step {
     font-size: 1.2rem;
-    padding: 20px;
+    min-height: 60px;
+    padding: 18px;
   }
-  .quick-percent-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 10px;
-  }
-  .quick-percent-row .btn { margin-bottom: 0; padding: 12px; font-size: 0.95rem; }
   /* ---------------- Status Stepper (3 ขั้นหลัก) ---------------- */
   .status-stepper {
     display: flex;
@@ -495,7 +522,7 @@
   .stepper-item {
     flex: 1;
     text-align: center;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     color: var(--text-muted);
   }
   .stepper-item.active { color: var(--primary); font-weight: 800; }
@@ -505,43 +532,11 @@
     background: #fdecea;
     border: 1px solid var(--danger);
     color: var(--danger);
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 12px;
     text-align: center;
     font-weight: 700;
     margin: 10px 0 16px 0;
-  }
-  /* ---------------- Payment Toggle Pills (ยังไม่ชำระ / ชำระแล้ว) ---------------- */
-  .payment-toggle-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 14px;
-  }
-  .payment-toggle-btn {
-    padding: 16px 8px;
-    border-radius: 14px;
-    border: 2px solid var(--border);
-    background: #fff;
-    font-size: 1rem;
-    font-weight: 700;
-    text-align: center;
-    cursor: pointer;
-    color: var(--text-muted);
-  }
-  .payment-toggle-btn.active-unpaid {
-    border-color: var(--danger);
-    background: #fdecea;
-    color: var(--danger);
-  }
-  .payment-toggle-btn.active-paid {
-    border-color: var(--success);
-    background: #e6f4ea;
-    color: var(--success);
-  }
-  .payment-toggle-btn:disabled {
-    cursor: default;
-    opacity: 0.85;
   }
   /* ---------------- Modal (Job Detail) ---------------- */
   .modal-backdrop {
@@ -558,7 +553,7 @@
     max-width: 640px;
     max-height: 92vh;
     overflow-y: auto;
-    border-radius: 20px 20px 0 0;
+    border-radius: 22px 22px 0 0;
     padding: 20px;
   }
   .modal-close-btn {
@@ -566,92 +561,97 @@
     top: 0;
     float: right;
     background: #f1f3f4;
+    color: var(--text);
     border: none;
     border-radius: 999px;
-    min-width: 44px; height: 44px;
-    padding: 0 16px;
+    min-width: 48px; height: 48px;
+    padding: 0 18px;
     font-size: 1.05rem;
     font-weight: 700;
     cursor: pointer;
+    z-index: 2;
   }
   .modal-section {
     border-top: 1px solid #eee;
     padding-top: 14px;
     margin-top: 14px;
   }
-  .modal-section h3 { font-size: 1rem; margin: 0 0 10px 0; }
-  .info-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.95rem; gap: 10px; }
+  .modal-section h3 { font-size: 1.05rem; margin: 0 0 10px 0; }
+  .info-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 1rem; gap: 10px; }
   .info-row .label { color: var(--text-muted); white-space: nowrap; }
-  .info-row .value { text-align: right; }
+  .info-row .value { text-align: right; word-break: break-word; min-width: 0; }
   textarea.note-input {
     width: 100%;
     min-height: 90px;
     padding: 12px;
-    border-radius: 12px;
+    border-radius: 14px;
     border: 2px solid var(--border);
     font-family: inherit;
-    font-size: 0.95rem;
+    font-size: 1rem;
   }
   select.confirm-time-select, input.confirm-date-input,
   input.price-input, select.payment-method-select, input.payment-amount-input {
     width: 100%;
-    font-size: 1rem;
+    font-size: 1.05rem;
     padding: 12px;
-    border-radius: 12px;
+    min-height: 52px;
+    border-radius: 14px;
     border: 2px solid var(--border);
     margin-bottom: 10px;
+    background: #fff;
+    color: var(--text);
   }
   .photo-grid-view {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
   }
-  .photo-grid-view img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; }
+  .photo-grid-view img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; }
   .warning-box {
     background: #fff8e1;
     border: 1px solid var(--warning);
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 12px 14px;
-    font-size: 0.9rem;
+    font-size: 1rem;
     margin-bottom: 14px;
   }
   .readonly-note {
     background: #f1f3f4;
-    border-radius: 12px;
-    padding: 10px 14px;
-    font-size: 0.85rem;
+    border-radius: 14px;
+    padding: 12px 14px;
+    font-size: 1rem;
     color: var(--text-muted);
     margin-bottom: 10px;
   }
   /* ---------------- Payment History (ledger) ---------------- */
   .payment-tx-card {
-    background: #f8f9fa;
-    border-radius: 12px;
+    background: #f8f6f1;
+    border-radius: 14px;
     padding: 12px;
     margin-bottom: 10px;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
   }
   .payment-tx-card.voided { opacity: 0.55; }
-  .payment-tx-top { display: flex; justify-content: space-between; align-items: center; }
+  .payment-tx-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .payment-tx-amount { font-weight: 800; font-size: 1.05rem; }
   .payment-tx-amount.refund { color: var(--danger); }
   .payment-tx-amount.payment { color: var(--success); }
-  .payment-tx-meta { color: var(--text-muted); font-size: 0.82rem; margin-top: 4px; }
+  .payment-tx-meta { color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; }
   .payment-tx-evidence { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
   .payment-tx-evidence img { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; }
   .voided-tag {
     background: #fdecea; color: var(--danger); border-radius: 8px;
-    padding: 2px 8px; font-size: 0.75rem; font-weight: 700;
+    padding: 2px 8px; font-size: 0.8rem; font-weight: 700;
   }
   .balance-box {
-    background: #e8f0fe;
-    border-radius: 12px;
+    background: var(--primary-soft);
+    border-radius: 14px;
     padding: 14px;
     text-align: center;
     margin-bottom: 14px;
   }
   .balance-box .amount { font-size: 1.6rem; font-weight: 800; color: var(--primary-dark); }
-  .balance-box .caption { font-size: 0.85rem; color: var(--text-muted); }
+  .balance-box .caption { font-size: 0.95rem; color: var(--text-muted); }
   /* ---------------- Confirm Dialog ---------------- */
   .confirm-dialog-backdrop {
     position: fixed; inset: 0;
@@ -664,48 +664,35 @@
   }
   .confirm-dialog {
     background: #fff;
-    border-radius: 16px;
+    border-radius: 20px;
     padding: 20px;
-    max-width: 380px;
+    max-width: 400px;
     width: 100%;
   }
-  .confirm-dialog p { font-size: 1rem; margin-bottom: 14px; }
+  .confirm-dialog p { font-size: 1.1rem; line-height: 1.6; margin-bottom: 14px; white-space: pre-line; }
   .confirm-dialog textarea {
     width: 100%;
     min-height: 70px;
     padding: 10px;
-    border-radius: 10px;
+    border-radius: 12px;
     border: 2px solid var(--border);
     margin-bottom: 14px;
     font-family: inherit;
+    font-size: 1rem;
   }
-
-  /* ===== แก้การแสดงผลบนมือถือ (ข้อความล้น/โดนบัง) ===== */
-  .summary-wrap { min-width: 0; margin: 14px 0; }
-  .summary-grid > .summary-card { min-width: 0; }
-  .summary-grid.summary-grid-sub { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .summary-grid-sub .summary-card { padding: 14px 6px; gap: 4px; }
-  .summary-grid-sub .summary-card .label { font-size: 0.9rem; line-height: 1.35; word-break: keep-all; }
-  .summary-grid-sub .summary-card .count { font-size: 2rem; }
-  .app-header { gap: 8px; padding: 10px 12px; }
-  .app-header .title { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .app-header > div:last-child { flex-shrink: 0; min-width: 0; }
-  .app-header .user-info-text { white-space: nowrap; }
-  @media (max-width: 480px) {
-    .app-header .title { font-size: 1.05rem; }
-    .app-header .user-info { font-size: 0.8rem; }
-    #header-user-role, .app-header .user-info-text br { display: none; }
-    .app-header button.icon-btn { padding: 8px 10px; margin-left: 6px; min-height: 44px; }
-    .summary-grid-main > .summary-card { padding: 14px 16px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
   }
 </style>
 </head>
 <body>
+
 <!-- ======================== Loading Screen ======================== -->
 <div id="screen-loading" class="center-screen">
   <div class="spinner"></div>
   <p>กำลังเตรียมระบบ...</p>
 </div>
+
 <!-- ======================== Login Screen ======================== -->
 <div id="screen-login" class="container hidden">
   <div class="login-card">
@@ -725,6 +712,7 @@
     </div>
   </div>
 </div>
+
 <!-- ======================== Main Dashboard ======================== -->
 <div id="screen-dashboard" class="hidden">
   <div class="app-header">
@@ -732,19 +720,19 @@
     <div style="display:flex;align-items:center;">
       <div class="user-info">
         <div class="user-info-text"><span id="header-user-name"></span><br/><span id="header-user-role" style="opacity:0.8;"></span></div>
-        <button class="notif-failed-badge hidden" id="btn-notif-failed" title="งานที่ LINE ส่งไม่สำเร็จ">
+        <button class="notif-failed-badge hidden" id="btn-notif-failed" title="งานที่ LINE ส่งไม่สำเร็จ" aria-label="งานที่ LINE ส่งไม่สำเร็จ">
           📵<span class="badge-count hidden" id="notif-failed-count">0</span>
         </button>
       </div>
-      <button class="icon-btn" id="btn-refresh">🔄</button>
+      <button class="icon-btn" id="btn-refresh" aria-label="รีเฟรชข้อมูล">🔄</button>
       <button class="icon-btn" id="btn-logout">ออก</button>
     </div>
   </div>
-  <div id="offline-banner" class="offline-banner hidden">📶 ไม่มีสัญญาณอินเทอร์เน็ต ข้อมูลอาจไม่เป็นปัจจุบัน</div>
+  <div id="offline-banner" class="offline-banner hidden" role="alert">📶 ไม่มีสัญญาณอินเทอร์เน็ต ข้อมูลอาจไม่เป็นปัจจุบัน</div>
   <div class="container">
-    <div class="summary-wrap" id="summary-grid"></div>
+    <div class="summary-grid" id="summary-grid"></div>
     <div class="toolbar">
-      <input type="text" id="search-input" placeholder="🔍 ค้นหาชื่อ เบอร์โทร หรือเลขงาน" />
+      <input type="text" id="search-input" placeholder="🔎 ค้นหาเลขงาน ชื่อลูกค้า หรือเบอร์โทร" aria-label="ค้นหาเลขงาน ชื่อลูกค้า หรือเบอร์โทร" />
       <button class="toolbar-toggle" id="btn-toggle-filters">ตัวกรองเพิ่มเติม ▾</button>
       <div id="filter-panel" class="hidden">
         <div class="filter-row">
@@ -753,7 +741,7 @@
             <option value="pending_confirmation">รับเข้าระบบ (รอยืนยัน)</option>
             <option value="waiting">รับเข้าระบบ (รอทำ/กำลังทำ)</option>
             <option value="completed">เสร็จแล้ว</option>
-            <option value="picked_up">รับแล้ว</option>
+            <option value="picked_up">รับแล้ว/ปิดงาน</option>
             <option value="cancelled">ยกเลิก</option>
           </select>
           <select id="filter-job-type">
@@ -769,16 +757,16 @@
       <div class="show-picked-up-row">
         <span>แสดงงานที่ "รับแล้ว"</span>
         <label class="switch">
-          <input type="checkbox" id="toggle-show-picked-up" />
+          <input type="checkbox" id="toggle-show-picked-up" aria-label='แสดงงานที่ "รับแล้ว"' />
           <span class="switch-slider"></span>
         </label>
       </div>
     </div>
     <div class="calendar-card">
       <div class="calendar-header">
-        <button id="btn-cal-prev">◀</button>
+        <button id="btn-cal-prev" aria-label="เดือนก่อนหน้า">◀</button>
         <span id="calendar-month-label"></span>
-        <button id="btn-cal-next">▶</button>
+        <button id="btn-cal-next" aria-label="เดือนถัดไป">▶</button>
       </div>
       <div class="calendar-grid" id="calendar-weekdays"></div>
       <div class="calendar-grid" id="calendar-grid" style="margin-top:4px;"></div>
@@ -793,16 +781,18 @@
     <div id="job-list"></div>
     <div id="job-list-empty" class="center-screen hidden">
       <p style="font-size:2.8rem;">📭</p>
-      <p style="font-size:1.1rem;font-weight:700;">ไม่พบงานที่ตรงกับเงื่อนไขนี้ค่ะ</p>
-      <p style="color:var(--text-muted);">ลองกดวันอื่นในปฏิทิน หรือล้างตัวกรองเพื่อดูงานทั้งหมดอีกครั้ง</p>
-      <button class="btn btn-secondary" id="btn-clear-filters-empty" style="margin-top:10px;max-width:280px;">📋 ล้างตัวกรอง ดูงานทั้งหมด</button>
+      <p style="font-size:1.1rem;font-weight:700;">ไม่พบงานที่ค้นหา</p>
+      <p style="color:var(--text-muted);">ลองกดวันอื่นในปฏิทิน หรือกดดูงานทั้งหมดอีกครั้ง</p>
+      <button class="btn btn-secondary" id="btn-clear-filters-empty" style="margin-top:10px;max-width:280px;">📋 ดูงานทั้งหมด</button>
     </div>
   </div>
 </div>
+
 <!-- ======================== Job Detail Modal ======================== -->
 <div id="job-modal-backdrop" class="modal-backdrop hidden">
   <div class="modal-sheet" id="job-modal-sheet"></div>
 </div>
+
 <!-- ======================== Confirm Dialog (generic) ======================== -->
 <div id="confirm-dialog-backdrop" class="confirm-dialog-backdrop hidden">
   <div class="confirm-dialog">
@@ -814,6 +804,7 @@
     </div>
   </div>
 </div>
+
 <script type="module" src="./dashboard.js"></script>
 </body>
 </html>
